@@ -1,0 +1,56 @@
+# Cursor Rules for TypeScript + FastAPI + SQLite Learning Project
+
+## Project Overview
+- **Frontend**: TypeScript/React with minimal dependencies
+- **Backend**: FastAPI (Python) with SQLite database
+- **Goal**: Learning and understanding full-stack development
+- **Complexity**: Keep everything simple and educational
+
+## Code Guidelines
+
+### General Rules
+- **NEVER write large portions of code unless specifically requested**
+- Keep all code simple and educational
+- Focus on learning concepts rather than production-ready features
+- Use minimal external dependencies
+- Write clear, commented code with explanations
+
+### Frontend (TypeScript/React)
+- Use functional components with hooks
+- Keep components small and focused
+- Use TypeScript interfaces for type safety
+- Minimal styling - focus on functionality
+- Use fetch API for backend communication
+
+### Backend (FastAPI)
+- Simple API endpoints with clear purposes
+- Basic CRUD operations
+- Use Pydantic models for data validation
+- Keep database operations straightforward
+- Include docstrings explaining each endpoint
+
+### Database (SQLite)
+- Simple table structures
+- Basic relationships when needed
+- Use SQLAlchemy ORM for learning
+- Include database schema documentation
+
+### File Structure
+- Separate frontend and backend clearly
+- Use descriptive folder names
+- Keep related files together
+- Include README files for each major section
+
+### Learning Focus
+- Each feature should teach a specific concept
+- Include comments explaining "why" not just "what"
+- Build incrementally - one concept at a time
+- Focus on understanding data flow between layers
+
+## When Writing Code
+- Ask questions to clarify requirements
+- Suggest simple approaches first
+- Explain trade-offs and alternatives
+- Break complex tasks into smaller learning steps
+- Provide context for why certain patterns are used
+

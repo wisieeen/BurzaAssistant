@@ -1,0 +1,9 @@
+@echo off
+echo Starting Voice Assistant Backend...
+echo.
+echo Activating virtual environment...
+call venv\Scripts\activate.bat
+echo.
+echo Starting FastAPI server...
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+pause
