@@ -1,10 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Dict, Any
+import logging
 
 from database import get_db
 from services.settings_service import SettingsService
 from schemas.settings import SettingsResponse, SettingsUpdateResponse
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Create router
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -99,7 +103,7 @@ async def apply_settings_temporarily(
     """
     try:
         # Only allow LLM-related settings for temporary application
-        allowed_keys = ['ollamaModel', 'ollamaTaskPrompt', 'ollamaMindMapPrompt']
+        allowed_keys = ['ollamaModel', 'ollamaSummaryModel', 'ollamaMindMapModel', 'ollamaTaskPrompt', 'ollamaMindMapPrompt']
         temp_settings = {k: v for k, v in settings_data.items() if k in allowed_keys}
         
         if not temp_settings:
@@ -115,6 +119,10 @@ async def apply_settings_temporarily(
         backend_settings = {}
         if 'ollamaModel' in temp_settings:
             backend_settings['ollama_model'] = temp_settings['ollamaModel']
+        if 'ollamaSummaryModel' in temp_settings:
+            backend_settings['ollama_summary_model'] = temp_settings['ollamaSummaryModel']
+        if 'ollamaMindMapModel' in temp_settings:
+            backend_settings['ollama_mind_map_model'] = temp_settings['ollamaMindMapModel']
         if 'ollamaTaskPrompt' in temp_settings:
             backend_settings['ollama_task_prompt'] = temp_settings['ollamaTaskPrompt']
         if 'ollamaMindMapPrompt' in temp_settings:
@@ -125,10 +133,14 @@ async def apply_settings_temporarily(
         
         logger.info(f"Temporary settings applied: {list(backend_settings.keys())}")
         
+        # Get summary of applied settings
+        settings_summary = settings_service.get_temporary_settings_summary()
+        
         return {
             "success": True,
             "message": "LLM settings applied temporarily",
-            "applied_settings": list(temp_settings.keys())
+            "applied_settings": list(temp_settings.keys()),
+            "settings_summary": settings_summary
         }
         
     except HTTPException:
@@ -164,6 +176,46 @@ async def get_whisper_languages():
         "languages": languages,
         "message": "Available Whisper languages retrieved"
     }
+
+@router.get("/temporary-settings")
+async def get_temporary_settings(db: Session = Depends(get_db)):
+    """
+    Get current temporary settings (for debugging)
+    
+    Returns:
+        Current temporary settings
+    """
+    try:
+        settings_service = SettingsService(db)
+        summary = settings_service.get_temporary_settings_summary()
+        
+        return {
+            "success": True,
+            "temporary_settings": summary
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get temporary settings: {str(e)}")
+
+@router.delete("/temporary-settings")
+async def clear_temporary_settings(db: Session = Depends(get_db)):
+    """
+    Clear all temporary settings
+    
+    Returns:
+        Success response
+    """
+    try:
+        settings_service = SettingsService(db)
+        settings_service.clear_temporary_settings()
+        
+        return {
+            "success": True,
+            "message": "Temporary settings cleared"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to clear temporary settings: {str(e)}")
 
 @router.get("/whisper/models")
 async def get_whisper_models():

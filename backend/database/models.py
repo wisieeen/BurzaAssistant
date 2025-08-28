@@ -34,6 +34,8 @@ class UserSettings(Base):
     whisper_language = Column(String, default="auto")
     whisper_model = Column(String, default="base")
     ollama_model = Column(String, default="artifish/llama3.2-uncensored:latest")
+    ollama_summary_model = Column(String, default="artifish/llama3.2-uncensored:latest")
+    ollama_mind_map_model = Column(String, default="artifish/llama3.2-uncensored:latest")
     ollama_task_prompt = Column(Text, nullable=True)
     ollama_mind_map_prompt = Column(Text, nullable=True)
     voice_chunk_length = Column(Integer, default=500)

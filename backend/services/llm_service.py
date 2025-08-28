@@ -24,7 +24,9 @@ class LLMService:
         self.settings_service = settings_service
         
         # Default values (will be overridden by settings if available)
-        self.model_name = "artifish/llama3.2-uncensored:latest"
+        self.model_name = "artifish/llama3.2-uncensored:latest"  # General model (legacy)
+        self.summary_model = "artifish/llama3.2-uncensored:latest"  # For summary analysis
+        self.mind_map_model = "artifish/llama3.2-uncensored:latest"  # For mind map generation
         self.task_prompt = """Please analyze the following transcript and provide insights:
 
 TRANSCRIPT:
@@ -104,18 +106,36 @@ Please return ONLY the corrected JSON:"""
         try:
             settings = self.settings_service.get_or_create_user_settings()
             if settings:
-                self.model_name = settings.ollama_model
+                old_model = self.model_name
+                old_summary_model = self.summary_model
+                old_mind_map_model = self.mind_map_model
+                old_task_prompt = self.task_prompt
+                
+                # Update models for different tasks
+                self.model_name = settings.ollama_model  # Legacy general model
+                self.summary_model = getattr(settings, 'ollama_summary_model', settings.ollama_model)
+                self.mind_map_model = getattr(settings, 'ollama_mind_map_model', settings.ollama_model)
+                
                 self.task_prompt = settings.ollama_task_prompt
                 if settings.ollama_mind_map_prompt:
                     self.mind_map_prompt = settings.ollama_mind_map_prompt
                 
-                # Log settings update
-                logger.info(f"LLMService updated with settings - Model: {self.model_name}")
+                # Log settings update with more detail
+                logger.info(f"LLMService updated with settings - General: {self.model_name}, Summary: {self.summary_model}, MindMap: {self.mind_map_model}")
+                if old_model != self.model_name:
+                    logger.info(f"General model changed from '{old_model}' to '{self.model_name}'")
+                if old_summary_model != self.summary_model:
+                    logger.info(f"Summary model changed from '{old_summary_model}' to '{self.summary_model}'")
+                if old_mind_map_model != self.mind_map_model:
+                    logger.info(f"Mind map model changed from '{old_mind_map_model}' to '{self.mind_map_model}'")
+                if old_task_prompt != self.task_prompt:
+                    logger.info("Task prompt updated")
                 
                 # Check if temporary settings are being applied
                 temp_settings = self.settings_service.get_temporary_settings()
                 if temp_settings:
-                    logger.info(f"Temporary settings applied: {list(temp_settings.keys())}")
+                    logger.info(f"Temporary settings available: {list(temp_settings.keys())}")
+                    logger.info(f"Temporary settings values: {temp_settings}")
                     
         except Exception as e:
             logger.warning(f"Failed to update LLMService settings: {e}")
@@ -148,6 +168,20 @@ Please return ONLY the corrected JSON:"""
         if self.settings_service:
             self._update_settings_from_service()
             logger.info("LLMService settings refreshed from service")
+    
+    def force_refresh_settings(self):
+        """
+        Force refresh settings from the settings service and log the current state
+        """
+        if self.settings_service:
+            logger.info("Force refreshing LLMService settings...")
+            self._update_settings_from_service()
+            
+            # Log current state
+            temp_settings = self.settings_service.get_temporary_settings()
+            logger.info(f"Current LLMService state - Model: {self.model_name}")
+            logger.info(f"Temporary settings: {temp_settings}")
+            logger.info("LLMService settings force refresh completed")
     
     def _test_ollama_connection(self):
         """Test connection to Ollama and verify model availability"""
@@ -199,11 +233,11 @@ Please return ONLY the corrected JSON:"""
             # Create the prompt
             prompt = self.create_analysis_prompt(transcript_text)
             
-            logger.info(f"Processing transcript {transcript_id} with {self.model_name}")
+            logger.info(f"Processing transcript {transcript_id} with summary model: {self.summary_model}")
             
             # Call Ollama
             response = ollama.chat(
-                model=self.model_name,
+                model=self.summary_model,
                 messages=[
                     {
                         'role': 'user',
@@ -223,7 +257,7 @@ Please return ONLY the corrected JSON:"""
                 transcript_id=transcript_id,
                 prompt=prompt,
                 response=llm_response,
-                model=self.model_name,
+                model=self.summary_model,
                 processing_time=processing_time
             )
             
@@ -300,25 +334,33 @@ Please return ONLY the corrected JSON:"""
     
     def get_model_info(self) -> Dict[str, Any]:
         """
-        Get information about the LLM model
+        Get information about the LLM models
         
         Returns:
-            Dictionary with model information
+            Dictionary with model information for all three models
         """
         try:
             models = ollama.list()
             model_names = [model['name'] for model in models['models']]
             
             return {
-                "model_name": self.model_name,
-                "available": self.model_name in model_names,
+                "general_model": self.model_name,
+                "summary_model": self.summary_model,
+                "mind_map_model": self.mind_map_model,
+                "general_available": self.model_name in model_names,
+                "summary_available": self.summary_model in model_names,
+                "mind_map_available": self.mind_map_model in model_names,
                 "all_models": model_names,
                 "status": "connected" if models else "disconnected"
             }
         except Exception as e:
             return {
-                "model_name": self.model_name,
-                "available": False,
+                "general_model": self.model_name,
+                "summary_model": self.summary_model,
+                "mind_map_model": self.mind_map_model,
+                "general_available": False,
+                "summary_available": False,
+                "mind_map_available": False,
                 "error": str(e),
                 "status": "error"
             }
@@ -388,7 +430,7 @@ Please return ONLY the corrected JSON:"""
                 for t in session_transcripts
             ])
             
-            logger.info(f"Processing session {session_id} with {len(session_transcripts)} transcripts")
+            logger.info(f"Processing session {session_id} with {len(session_transcripts)} transcripts using summary model: {self.summary_model}")
             
             # Create session analysis prompt
             prompt = self.create_session_analysis_prompt(combined_text, session_id)
@@ -397,7 +439,7 @@ Please return ONLY the corrected JSON:"""
             
             # Call Ollama
             response = ollama.chat(
-                model=self.model_name,
+                model=self.summary_model,
                 messages=[
                     {
                         'role': 'user',
@@ -418,7 +460,7 @@ Please return ONLY the corrected JSON:"""
                 transcript_id=first_transcript_id,  # Reference to first transcript
                 prompt=prompt,
                 response=llm_response,
-                model=self.model_name,
+                model=self.summary_model,
                 processing_time=processing_time
             )
             
@@ -450,9 +492,9 @@ Please return ONLY the corrected JSON:"""
                     invalid_json=invalid_json
                 )
                 
-                # Call Ollama for correction
+                # Call Ollama for correction (use mind map model for JSON corrections)
                 response = ollama.chat(
-                    model=self.model_name,
+                    model=self.mind_map_model,
                     messages=[
                         {
                             'role': 'user',
@@ -578,7 +620,7 @@ Please return ONLY the corrected JSON:"""
                 for t in session_transcripts
             ])
             
-            logger.info(f"Generating mind map for session {session_id} with {len(session_transcripts)} transcripts")
+            logger.info(f"Generating mind map for session {session_id} with {len(session_transcripts)} transcripts using mind map model: {self.mind_map_model}")
             
             # Create mind map prompt
             prompt = self.create_mind_map_prompt(combined_text, session_id, use_random_seed)
@@ -587,7 +629,7 @@ Please return ONLY the corrected JSON:"""
             
             # Call Ollama
             response = ollama.chat(
-                model=self.model_name,
+                model=self.mind_map_model,
                 messages=[
                     {
                         'role': 'user',
@@ -620,7 +662,7 @@ Please return ONLY the corrected JSON:"""
                 nodes=json.dumps(mind_map_data['nodes']),
                 edges=json.dumps(mind_map_data['edges']),
                 prompt=prompt,
-                model=self.model_name,
+                model=self.mind_map_model,
                 processing_time=processing_time
             )
             

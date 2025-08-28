@@ -33,6 +33,20 @@ class SettingsService:
         """
         SettingsService._temporary_settings.update(settings_dict)
         logger.info(f"Applied temporary settings: {list(settings_dict.keys())}")
+        logger.info(f"Temporary settings values: {settings_dict}")
+    
+    def get_temporary_settings_summary(self) -> Dict[str, Any]:
+        """
+        Get a summary of current temporary settings
+        
+        Returns:
+            Dictionary with temporary settings summary
+        """
+        return {
+            "has_temporary_settings": bool(SettingsService._temporary_settings),
+            "temporary_settings_keys": list(SettingsService._temporary_settings.keys()),
+            "temporary_settings_values": SettingsService._temporary_settings.copy()
+        }
     
     def get_temporary_settings(self) -> Dict[str, Any]:
         """
@@ -85,6 +99,8 @@ class SettingsService:
             whisper_language="auto",
             whisper_model="base",
             ollama_model="artifish/llama3.2-uncensored:latest",
+            ollama_summary_model="artifish/llama3.2-uncensored:latest",
+            ollama_mind_map_model="artifish/llama3.2-uncensored:latest",
             ollama_task_prompt="Please analyze the following transcript and provide insights:\n\nTRANSCRIPT:\n{transcript}\n\nPlease provide:\n1. A brief summary of the main topics discussed\n2. Key points or important information mentioned\n3. Any questions, concerns, or action items identified\n4. Overall sentiment or tone of the conversation\n\nPlease be concise but thorough in your analysis.",
             ollama_mind_map_prompt="Please analyze the following transcript and create a mind map of concepts and relationships.\n\nTRANSCRIPT:\n{transcript}\n\nCreate a mind map in JSON format with the following structure:\n{\n  \"nodes\": [\n    {\n      \"id\": \"unique_id_1\",\n      \"label\": \"Main Topic\",\n      \"type\": \"topic\"\n    },\n    {\n      \"id\": \"unique_id_2\", \n      \"label\": \"Related Concept\",\n      \"type\": \"concept\"\n    }\n  ],\n  \"edges\": [\n    {\n      \"id\": \"edge_1\",\n      \"source\": \"unique_id_1\",\n      \"target\": \"unique_id_2\",\n      \"label\": \"relates to\",\n      \"type\": \"relationship\"\n    }\n  ]\n}\n\nGuidelines:\n- Extract key concepts, topics, entities, and ideas from the transcript\n- Create meaningful relationships between concepts\n- Use descriptive labels for nodes and edges\n- Focus on the most important concepts mentioned\n- Keep the structure logical and hierarchical\n- Return ONLY valid JSON, no additional text\n\nReturn the mind map as a valid JSON object:",
             voice_chunk_length=500,
@@ -114,14 +130,21 @@ class SettingsService:
         # Apply temporary settings if any exist
         if SettingsService._temporary_settings:
             logger.debug(f"Applying temporary settings: {list(SettingsService._temporary_settings.keys())}")
+            
             # Create a copy of the settings object to avoid modifying the database object
-            # We'll apply temporary settings to the returned object
+            # We need to create a new object with the same attributes
+            from copy import copy
+            settings_copy = copy(settings)
+            
+            # Apply temporary settings to the copy
             for key, value in SettingsService._temporary_settings.items():
-                if hasattr(settings, key):
-                    setattr(settings, key, value)
-                    logger.debug(f"Applied temporary setting {key}")
+                if hasattr(settings_copy, key):
+                    setattr(settings_copy, key, value)
+                    logger.debug(f"Applied temporary setting {key}: {value}")
                 else:
                     logger.warning(f"Temporary setting {key} not found in settings object")
+            
+            return settings_copy
         
         return settings
     
@@ -220,7 +243,10 @@ class SettingsService:
             'whisperLanguage': settings.whisper_language,
             'whisperModel': settings.whisper_model,
             'ollamaModel': settings.ollama_model,
+            'ollamaSummaryModel': settings.ollama_summary_model,
+            'ollamaMindMapModel': settings.ollama_mind_map_model,
             'ollamaTaskPrompt': settings.ollama_task_prompt,
+            'ollamaMindMapPrompt': settings.ollama_mind_map_prompt,
             'voiceChunkLength': settings.voice_chunk_length,
             'voiceChunksNumber': settings.voice_chunks_number,
             'activeSessionId': settings.active_session_id
@@ -249,8 +275,17 @@ class SettingsService:
         if 'ollamaModel' in settings_dict:
             backend_settings['ollama_model'] = settings_dict['ollamaModel']
         
+        if 'ollamaSummaryModel' in settings_dict:
+            backend_settings['ollama_summary_model'] = settings_dict['ollamaSummaryModel']
+        
+        if 'ollamaMindMapModel' in settings_dict:
+            backend_settings['ollama_mind_map_model'] = settings_dict['ollamaMindMapModel']
+        
         if 'ollamaTaskPrompt' in settings_dict:
             backend_settings['ollama_task_prompt'] = settings_dict['ollamaTaskPrompt']
+        
+        if 'ollamaMindMapPrompt' in settings_dict:
+            backend_settings['ollama_mind_map_prompt'] = settings_dict['ollamaMindMapPrompt']
         
         if 'voiceChunkLength' in settings_dict:
             backend_settings['voice_chunk_length'] = settings_dict['voiceChunkLength']

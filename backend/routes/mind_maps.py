@@ -6,6 +6,7 @@ import json
 from database import get_db
 from services.database_service import DatabaseService
 from services.llm_service import LLMService
+from services.settings_service import SettingsService
 from schemas.mind_map import MindMapResponse, MindMapListResponse, MindMapData, MindMapNode, MindMapEdge
 
 # Create router
@@ -28,7 +29,8 @@ async def generate_mind_map(
     """
     try:
         db_service = DatabaseService(db)
-        llm_service = LLMService(db_service)
+        settings_service = SettingsService(db)
+        llm_service = LLMService(db_service, settings_service)
         
         # Check if session exists
         session = db_service.get_session(session_id)

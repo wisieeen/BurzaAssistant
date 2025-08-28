@@ -254,14 +254,19 @@ function WorkingAreaContent({
       const mindMapResponse = await fetch(`http://localhost:8000/api/sessions/${sessionId}/mind-maps`)
       if (mindMapResponse.ok) {
         const mindMapData = await mindMapResponse.json()
+        console.log('Session mind maps response:', mindMapData)
         if (mindMapData.success) {
           const mindMaps = mindMapData.mind_maps.map((mindMap: any) => ({
             nodes: mindMap.nodes || [],
             edges: mindMap.edges || [],
             session_id: sessionId,
-            timestamp: mindMap.created_at
+            // Backend returns `timestamp`; keep fallback to created_at just in case
+            timestamp: mindMap.timestamp || mindMap.created_at
           }))
-          setSessionMindMaps(mindMaps)
+          // Sort newest first to ensure latest map is displayed
+          const sortedMindMaps = mindMaps.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+          console.log('Processed mind maps (sorted):', sortedMindMaps.map((m: any) => m.timestamp))
+          setSessionMindMaps(sortedMindMaps)
         }
       }
     } catch (error) {

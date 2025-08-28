@@ -11,6 +11,8 @@ interface SessionSettings {
   whisperLanguage: string
   whisperModel: string
   ollamaModel: string
+  ollamaSummaryModel: string
+  ollamaMindMapModel: string
   ollamaTaskPrompt: string
   ollamaMindMapPrompt: string
   voiceChunkLength: number
@@ -71,6 +73,8 @@ const DEFAULT_SETTINGS: SessionSettings = {
   whisperLanguage: 'auto',
   whisperModel: 'base',
   ollamaModel: 'artifish/llama3.2-uncensored:latest',
+  ollamaSummaryModel: 'artifish/llama3.2-uncensored:latest',
+  ollamaMindMapModel: 'artifish/llama3.2-uncensored:latest',
   ollamaTaskPrompt: 'Please analyze the following transcript and provide insights:\n\nTRANSCRIPT:\n{transcript}\n\nPlease provide:\n1. A brief summary of the main topics discussed\n2. Key points or important information mentioned\n3. Any questions, concerns, or action items identified\n4. Overall sentiment or tone of the conversation\n\nPlease be concise but thorough in your analysis.',
   ollamaMindMapPrompt: 'Please analyze the following transcript and create a mind map of concepts and relationships.\n\nTRANSCRIPT:\n{transcript}\n\nCreate a mind map in JSON format with the following structure:\n{\n  "nodes": [\n    {\n      "id": "unique_id_1",\n      "label": "Main Topic",\n      "type": "topic"\n    },\n    {\n      "id": "unique_id_2", \n      "label": "Related Concept",\n      "type": "concept"\n    }\n  ],\n  "edges": [\n    {\n      "id": "edge_1",\n      "source": "unique_id_1",\n      "target": "unique_id_2",\n      "label": "relates to",\n      "type": "relationship"\n    }\n  ]\n}\n\nGuidelines:\n- Extract key concepts, topics, entities, and ideas from the transcript\n- Create meaningful relationships between concepts\n- Use descriptive labels for nodes and edges\n- Focus on the most important concepts mentioned\n- Keep the structure logical and hierarchical\n- Return ONLY valid JSON, no additional text\n\nReturn the mind map as a valid JSON object:',
   voiceChunkLength: 500,
@@ -111,6 +115,8 @@ export function SettingsPanel({ onSessionSelect, selectedSessionId, onSessionCon
             whisperLanguage: data.settings.whisper_language,
             whisperModel: data.settings.whisper_model,
             ollamaModel: data.settings.ollama_model,
+            ollamaSummaryModel: data.settings.ollama_summary_model || data.settings.ollama_model,
+            ollamaMindMapModel: data.settings.ollama_mind_map_model || data.settings.ollama_model,
             ollamaTaskPrompt: data.settings.ollama_task_prompt,
             ollamaMindMapPrompt: data.settings.ollama_mind_map_prompt,
             voiceChunkLength: data.settings.voice_chunk_length,
@@ -280,6 +286,8 @@ export function SettingsPanel({ onSessionSelect, selectedSessionId, onSessionCon
       try {
         const llmSettings = {
           ollamaModel: settings.ollamaModel,
+          ollamaSummaryModel: settings.ollamaSummaryModel,
+          ollamaMindMapModel: settings.ollamaMindMapModel,
           ollamaTaskPrompt: settings.ollamaTaskPrompt,
           ollamaMindMapPrompt: settings.ollamaMindMapPrompt
         }
@@ -450,22 +458,73 @@ export function SettingsPanel({ onSessionSelect, selectedSessionId, onSessionCon
           <CardTitle className="text-base">Ollama LLM</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Model Selection */}
+          {/* Model Selection Header */}
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium">Models</label>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={loadAvailableOllamaModels}
+              disabled={isLoadingModels}
+              className="h-6 px-2 text-xs"
+            >
+              {isLoadingModels ? 'Loading...' : 'Refresh'}
+            </Button>
+          </div>
+
+          {/* Summary Model Selection */}
           <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-sm font-medium">Model</label>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={loadAvailableOllamaModels}
-                disabled={isLoadingModels}
-                className="h-6 px-2 text-xs"
-              >
-                {isLoadingModels ? 'Loading...' : 'Refresh'}
-              </Button>
-            </div>
+            <label className="text-sm font-medium text-blue-600">Summary Analysis Model</label>
             <select 
               className="mt-1 w-full px-3 py-2 border rounded-md bg-background"
+              value={settings.ollamaSummaryModel}
+              onChange={(e) => handleSettingChange('ollamaSummaryModel', e.target.value)}
+              disabled={isLoadingModels}
+            >
+              {isLoadingModels ? (
+                <option>Loading models...</option>
+              ) : (
+                availableOllamaModels.map(model => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                  </option>
+                ))
+              )}
+            </select>
+            <p className="text-xs text-muted-foreground mt-1">
+              Used for transcript analysis and summaries: {getOllamaModelName(settings.ollamaSummaryModel)}
+            </p>
+          </div>
+
+          {/* Mind Map Model Selection */}
+          <div>
+            <label className="text-sm font-medium text-green-600">Mind Map Model</label>
+            <select 
+              className="mt-1 w-full px-3 py-2 border rounded-md bg-background"
+              value={settings.ollamaMindMapModel}
+              onChange={(e) => handleSettingChange('ollamaMindMapModel', e.target.value)}
+              disabled={isLoadingModels}
+            >
+              {isLoadingModels ? (
+                <option>Loading models...</option>
+              ) : (
+                availableOllamaModels.map(model => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                  </option>
+                ))
+              )}
+            </select>
+            <p className="text-xs text-muted-foreground mt-1">
+              Used for mind map generation: {getOllamaModelName(settings.ollamaMindMapModel)}
+            </p>
+          </div>
+
+          {/* Legacy General Model (for backward compatibility) */}
+          <div>
+            <label className="text-sm font-medium text-gray-500">General Model (Legacy)</label>
+            <select 
+              className="mt-1 w-full px-3 py-2 border rounded-md bg-background opacity-75"
               value={settings.ollamaModel}
               onChange={(e) => handleSettingChange('ollamaModel', e.target.value)}
               disabled={isLoadingModels}
@@ -481,14 +540,15 @@ export function SettingsPanel({ onSessionSelect, selectedSessionId, onSessionCon
               )}
             </select>
             <p className="text-xs text-muted-foreground mt-1">
-              {getOllamaModelName(settings.ollamaModel)}
+              Legacy general model (fallback): {getOllamaModelName(settings.ollamaModel)}
             </p>
-            {availableOllamaModels.length === 0 && !isLoadingModels && (
-              <p className="text-xs text-orange-600 mt-1">
-                No models found. Make sure Ollama is running and has models installed.
-              </p>
-            )}
           </div>
+
+          {availableOllamaModels.length === 0 && !isLoadingModels && (
+            <p className="text-xs text-orange-600 mt-1">
+              No models found. Make sure Ollama is running and has models installed.
+            </p>
+          )}
 
           {/* Task Prompt */}
           <div>
