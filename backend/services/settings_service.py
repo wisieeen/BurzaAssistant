@@ -1,10 +1,14 @@
 from sqlalchemy.orm import Session as DBSession
 from typing import Dict, Any, Optional
 from datetime import datetime
+import logging
 
 from database.models import UserSettings
 from schemas.settings import UserSettingsCreate, UserSettingsUpdate
 from services.database_service import DatabaseService
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 class SettingsService:
     """
@@ -13,9 +17,46 @@ class SettingsService:
     Provides methods for managing user preferences for transcription and LLM processing
     """
     
+    # Class-level cache for temporary settings (shared across all instances)
+    _temporary_settings = {}
+    
     def __init__(self, db: DBSession):
         self.db = db
         self.db_service = DatabaseService(db)
+    
+    def apply_temporary_settings(self, settings_dict: Dict[str, Any]) -> None:
+        """
+        Apply settings temporarily without saving to database
+        
+        Args:
+            settings_dict: Dictionary of settings to apply temporarily
+        """
+        SettingsService._temporary_settings.update(settings_dict)
+        logger.info(f"Applied temporary settings: {list(settings_dict.keys())}")
+    
+    def get_temporary_settings(self) -> Dict[str, Any]:
+        """
+        Get current temporary settings
+        
+        Returns:
+            Dictionary of temporary settings
+        """
+        return SettingsService._temporary_settings.copy()
+    
+    def clear_temporary_settings(self) -> None:
+        """
+        Clear all temporary settings
+        """
+        SettingsService._temporary_settings.clear()
+        logger.info("Cleared temporary settings")
+    
+    @classmethod
+    def clear_all_temporary_settings(cls) -> None:
+        """
+        Clear all temporary settings (class method)
+        """
+        cls._temporary_settings.clear()
+        logger.info("Cleared all temporary settings")
     
     def get_user_settings(self, user_id: str = "default") -> Optional[UserSettings]:
         """
@@ -64,11 +105,24 @@ class SettingsService:
             user_id: User ID (defaults to "default" for single-user setup)
             
         Returns:
-            UserSettings object
+            UserSettings object with temporary settings applied
         """
         settings = self.get_user_settings(user_id)
         if not settings:
             settings = self.create_user_settings(user_id)
+        
+        # Apply temporary settings if any exist
+        if SettingsService._temporary_settings:
+            logger.debug(f"Applying temporary settings: {list(SettingsService._temporary_settings.keys())}")
+            # Create a copy of the settings object to avoid modifying the database object
+            # We'll apply temporary settings to the returned object
+            for key, value in SettingsService._temporary_settings.items():
+                if hasattr(settings, key):
+                    setattr(settings, key, value)
+                    logger.debug(f"Applied temporary setting {key}")
+                else:
+                    logger.warning(f"Temporary setting {key} not found in settings object")
+        
         return settings
     
     def update_user_settings(self, user_id: str, settings_data: Dict[str, Any]) -> Optional[UserSettings]:
@@ -86,14 +140,41 @@ class SettingsService:
         if not settings:
             return None
         
+        # Store the old active session ID to check if it changed
+        old_active_session_id = settings.active_session_id
+        
         # Update only provided fields
         for key, value in settings_data.items():
-            if hasattr(settings, key) and value is not None:
+            if hasattr(settings, key):
                 setattr(settings, key, value)
         
         settings.updated_at = datetime.utcnow()
         self.db.commit()
         self.db.refresh(settings)
+        
+        # If active_session_id was updated and is not None, activate the session
+        if ('active_session_id' in settings_data and 
+            settings_data['active_session_id'] != old_active_session_id and 
+            settings_data['active_session_id'] is not None):
+            
+            session_id = settings_data['active_session_id']
+            logger.info(f"Active session ID changed to: {session_id}")
+            
+            try:
+                # Check if session exists, if not create it
+                existing_session = self.db_service.get_session(session_id)
+                if existing_session:
+                    # Session exists, activate it
+                    self.db_service.activate_session(session_id)
+                    logger.info(f"Session activated in database: {session_id}")
+                else:
+                    # Session doesn't exist, create it
+                    self.db_service.create_session(session_id)
+                    logger.info(f"Session created and activated in database: {session_id}")
+            except Exception as e:
+                logger.error(f"Failed to activate session {session_id}: {e}")
+                # Don't fail the settings update, just log the error
+        
         return settings
     
     def validate_whisper_language(self, language: str) -> bool:

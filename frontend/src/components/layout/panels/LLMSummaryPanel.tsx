@@ -1,9 +1,7 @@
-import { useState, useEffect } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Loader2 } from 'lucide-react'
-import { WebSocketService } from '@/services/websocketService'
+import { Copy, Download, Loader2 } from 'lucide-react'
 
 export interface SessionAnalysis {
   session_id: string
@@ -20,6 +18,7 @@ interface LLMSummaryPanelProps {
   selectedSessionId?: string | null
   sessionLLMResults?: SessionAnalysis[]
   isLoadingSessionContent?: boolean
+  onGenerateSummary?: () => void
 }
 
 export function LLMSummaryPanel({ 
@@ -28,29 +27,122 @@ export function LLMSummaryPanel({
   onClearAnalysis,
   selectedSessionId = null,
   sessionLLMResults = [],
-  isLoadingSessionContent = false
+  isLoadingSessionContent = false,
+  onGenerateSummary
 }: LLMSummaryPanelProps) {
 
+  // Get the analysis content to copy/download
+  const getAnalysisContent = () => {
+    // Prioritize live session analysis over historical results
+    if (sessionAnalysis) {
+      return sessionAnalysis.analysis
+    }
+    
+    if (selectedSessionId && sessionLLMResults.length > 0) {
+      // Return the most recent session LLM result
+      return sessionLLMResults[0].analysis
+    }
+    
+    return ''
+  }
+
+  const copyToClipboard = () => {
+    const analysisContent = getAnalysisContent()
+    if (analysisContent) {
+      navigator.clipboard.writeText(analysisContent)
+    }
+  }
+
+  const downloadAnalysis = () => {
+    const analysisContent = getAnalysisContent()
+    if (!analysisContent) return
+
+    const sessionId = selectedSessionId ? selectedSessionId.slice(-8) : 'session'
+    const content = `Session Analysis (${sessionId})\n\n${analysisContent}`
+    const blob = new Blob([content], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `session_analysis_${sessionId}_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const formatAnalysis = (analysis: string) => {
-    // Split the analysis into sections based on common patterns
-    const sections = analysis.split(/\*\*([^*]+)\*\*/)
-    return sections.map((section, index) => {
-      if (index % 2 === 1) {
-        // This is a bold header
+    // Split the analysis into lines and process each line
+    const lines = analysis.split('\n')
+    
+    return lines.map((line, index) => {
+      const trimmedLine = line.trim()
+      
+      // Skip empty lines
+      if (!trimmedLine) {
+        return <div key={index} className="h-2"></div>
+      }
+      
+      // Handle numbered lists (e.g., "1. ", "2. ", etc.)
+      const numberedListMatch = trimmedLine.match(/^(\d+)\.\s+(.+)$/)
+      if (numberedListMatch) {
         return (
-          <div key={index} className="mt-4 mb-2">
-            <h4 className="text-sm font-semibold text-primary">{section}</h4>
-          </div>
-        )
-      } else if (section.trim()) {
-        // This is content
-        return (
-          <div key={index} className="mb-2">
-            <p className="text-sm text-muted-foreground leading-relaxed">{section}</p>
+          <div key={index} className="flex items-start space-x-2 mb-2">
+            <span className="text-sm font-medium text-primary min-w-[20px]">
+              {numberedListMatch[1]}.
+            </span>
+            <p className="text-sm text-muted-foreground leading-relaxed flex-1">
+              {numberedListMatch[2]}
+            </p>
           </div>
         )
       }
-      return null
+      
+      // Handle bullet points (e.g., "- ", "* ", "• ")
+      const bulletMatch = trimmedLine.match(/^[-*•]\s+(.+)$/)
+      if (bulletMatch) {
+        return (
+          <div key={index} className="flex items-start space-x-2 mb-2">
+            <span className="text-sm text-primary mt-1">•</span>
+            <p className="text-sm text-muted-foreground leading-relaxed flex-1">
+              {bulletMatch[1]}
+            </p>
+          </div>
+        )
+      }
+      
+      // Handle section headers (lines that end with colon and are followed by content)
+      if (trimmedLine.endsWith(':') && trimmedLine.length < 50) {
+        return (
+          <div key={index} className="mt-4 mb-2">
+            <h4 className="text-sm font-semibold text-primary">{trimmedLine}</h4>
+          </div>
+        )
+      }
+      
+      // Handle bold text with ** markers
+      if (trimmedLine.includes('**')) {
+        const parts = trimmedLine.split(/\*\*([^*]+)\*\*/)
+        return (
+          <div key={index} className="mb-2">
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {parts.map((part, partIndex) => {
+                if (partIndex % 2 === 1) {
+                  // This is bold text
+                  return <span key={partIndex} className="font-semibold text-primary">{part}</span>
+                } else {
+                  // This is regular text
+                  return part
+                }
+              })}
+            </p>
+          </div>
+        )
+      }
+      
+      // Regular paragraph text
+      return (
+        <div key={index} className="mb-2">
+          <p className="text-sm text-muted-foreground leading-relaxed">{trimmedLine}</p>
+        </div>
+      )
     })
   }
 
@@ -66,7 +158,15 @@ export function LLMSummaryPanel({
   }
 
   const getDisplayContent = () => {
-    if (isLoadingSessionContent) {
+    console.log('LLMSummaryPanel getDisplayContent:', {
+      isLoadingSessionContent,
+      sessionAnalysis,
+      sessionLLMResultsLength: sessionLLMResults.length,
+      selectedSessionId,
+      sessionLLMResults
+    })
+
+    if (isLoadingSessionContent && !sessionAnalysis && sessionLLMResults.length === 0) {
       return (
         <div className="flex items-center justify-center py-8">
           <div className="flex items-center space-x-2">
@@ -77,28 +177,10 @@ export function LLMSummaryPanel({
       )
     }
 
-    if (selectedSessionId && sessionLLMResults.length > 0) {
-      // Display only the last (most recent) session LLM result
-      const lastResult = sessionLLMResults[sessionLLMResults.length - 1]
-      return (
-        <div className="flex-1 overflow-y-auto px-4 pb-4 min-h-0">
-          <Card className="border-l-4 border-l-primary">
-            <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground leading-relaxed">
-                {formatAnalysis(lastResult.analysis)}
-              </div>
-              <div className="flex items-center justify-between text-xs text-muted-foreground bg-muted/50 px-3 py-2 rounded-md mt-3">
-                <span>ID: {lastResult.llm_result_id}</span>
-                <span>{lastResult.processing_time.toFixed(1)}s • {new Date(lastResult.timestamp).toLocaleTimeString()}</span>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )
-    }
-
+    // Prioritize live session analysis over historical results
     if (sessionAnalysis) {
-      // Display current session analysis
+      console.log('Displaying live session analysis:', sessionAnalysis)
+      // Display current live session analysis
       return (
         <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2 min-h-0">
           <div className="flex-1 min-h-0">
@@ -112,6 +194,29 @@ export function LLMSummaryPanel({
           </div>
         </div>
       )
+    }
+
+    if (selectedSessionId && sessionLLMResults.length > 0) {
+      // Display only the first (most recent) session LLM result when no live analysis is available
+      // Results are sorted with newest first, so index 0 is the most recent
+      const mostRecentResult = sessionLLMResults[0]
+      console.log('Displaying most recent session LLM result:', mostRecentResult)
+      console.log('All session LLM results:', sessionLLMResults.map(r => ({ id: r.llm_result_id, timestamp: r.timestamp })))
+              return (
+          <div className="flex-1 overflow-y-auto px-4 pb-4 min-h-0">
+            <Card className="border-l-4 border-l-primary">
+              <CardContent className="p-4">
+                <div className="text-sm text-muted-foreground leading-relaxed">
+                  {formatAnalysis(mostRecentResult.analysis)}
+                </div>
+                <div className="flex items-center justify-between text-xs text-muted-foreground bg-muted/50 px-3 py-2 rounded-md mt-3">
+                  <span>ID: {mostRecentResult.llm_result_id}</span>
+                  <span>{mostRecentResult.processing_time.toFixed(1)}s • {new Date(mostRecentResult.timestamp).toLocaleTimeString()}</span>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )
     }
 
     // Default empty state
@@ -148,15 +253,44 @@ export function LLMSummaryPanel({
     <div className="h-full flex flex-col overflow-hidden">
       <div className="flex items-center justify-between p-4 pb-2">
         <h3 className="text-lg font-semibold">{getPanelTitle()}</h3>
-        {(sessionAnalysis || (selectedSessionId && sessionLLMResults.length > 0)) && (
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={clearAnalysis}
-          >
-            Clear
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {selectedSessionId && (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={onGenerateSummary}
+            >
+              Generate Summary
+            </Button>
+          )}
+          {(sessionAnalysis || (selectedSessionId && sessionLLMResults.length > 0)) && (
+            <>
+              <Button 
+                variant="outline"
+                size="sm"
+                onClick={copyToClipboard}
+                disabled={!getAnalysisContent()}
+              >
+                <Copy className="w-3 h-3" />
+              </Button>
+              <Button 
+                variant="outline"
+                size="sm"
+                onClick={downloadAnalysis}
+                disabled={!getAnalysisContent()}
+              >
+                <Download className="w-3 h-3" />
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={clearAnalysis}
+              >
+                Clear
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {error && (

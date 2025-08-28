@@ -41,7 +41,7 @@ class WebSocketService:
         
         Args:
             websocket: WebSocket connection
-            session_id: Optional session ID (if not provided, one will be generated)
+            session_id: Optional session ID (if not provided, will use active session from settings or generate new one)
             
         Returns:
             Session ID for this connection
@@ -49,7 +49,19 @@ class WebSocketService:
         await websocket.accept()
         
         if not session_id:
-            session_id = str(uuid.uuid4())
+            # Try to get active session ID from settings
+            try:
+                settings = self.settings_service.get_or_create_user_settings("default")
+                if settings.active_session_id:
+                    session_id = settings.active_session_id
+                    logger.info(f"Using active session from settings: {session_id}")
+                else:
+                    session_id = str(uuid.uuid4())
+                    logger.info(f"No active session in settings, generating new session: {session_id}")
+            except Exception as e:
+                logger.error(f"Failed to get active session from settings: {e}")
+                session_id = str(uuid.uuid4())
+                logger.info(f"Fallback to generating new session: {session_id}")
         
         self.active_connections[session_id] = websocket
         self.session_data[session_id] = {

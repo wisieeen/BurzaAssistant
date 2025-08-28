@@ -80,6 +80,62 @@ async def update_settings(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update settings: {str(e)}")
 
+@router.post("/apply-temporary")
+async def apply_settings_temporarily(
+    settings_data: Dict[str, Any],
+    db: Session = Depends(get_db)
+):
+    """
+    Apply LLM settings temporarily without saving to database
+    
+    This endpoint allows the frontend to apply LLM settings immediately
+    for the current session without persisting them to the database.
+    
+    Args:
+        settings_data: Dictionary containing LLM settings to apply temporarily
+        
+    Returns:
+        Success response
+    """
+    try:
+        # Only allow LLM-related settings for temporary application
+        allowed_keys = ['ollamaModel', 'ollamaTaskPrompt', 'ollamaMindMapPrompt']
+        temp_settings = {k: v for k, v in settings_data.items() if k in allowed_keys}
+        
+        if not temp_settings:
+            raise HTTPException(
+                status_code=400, 
+                detail="No valid LLM settings provided for temporary application"
+            )
+        
+        # Update the settings service with temporary values
+        settings_service = SettingsService(db)
+        
+        # Convert frontend format to backend format
+        backend_settings = {}
+        if 'ollamaModel' in temp_settings:
+            backend_settings['ollama_model'] = temp_settings['ollamaModel']
+        if 'ollamaTaskPrompt' in temp_settings:
+            backend_settings['ollama_task_prompt'] = temp_settings['ollamaTaskPrompt']
+        if 'ollamaMindMapPrompt' in temp_settings:
+            backend_settings['ollama_mind_map_prompt'] = temp_settings['ollamaMindMapPrompt']
+        
+        # Apply settings temporarily (this will update the settings service cache)
+        settings_service.apply_temporary_settings(backend_settings)
+        
+        logger.info(f"Temporary settings applied: {list(backend_settings.keys())}")
+        
+        return {
+            "success": True,
+            "message": "LLM settings applied temporarily",
+            "applied_settings": list(temp_settings.keys())
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to apply settings temporarily: {str(e)}")
+
 @router.get("/whisper/languages")
 async def get_whisper_languages():
     """

@@ -13,12 +13,14 @@ interface WorkingAreaContentProps {
   isListening: boolean
   onStartListening: () => void
   onStopListening: () => void
+  onSessionIdChange?: (sessionId: string | null) => void
 }
 
 function WorkingAreaContent({ 
   isListening, 
   onStartListening, 
-  onStopListening 
+  onStopListening,
+  onSessionIdChange
 }: WorkingAreaContentProps) {
   const { panels, expandedPanelId, movePanel, expandPanel, collapsePanel } = usePanelLayout()
   
@@ -48,6 +50,7 @@ function WorkingAreaContent({
   const [sessionLLMResults, setSessionLLMResults] = useState<SessionAnalysis[]>([])
   const [sessionMindMaps, setSessionMindMaps] = useState<MindMapData[]>([])
   const [isLoadingSessionContent, setIsLoadingSessionContent] = useState(false)
+  const [hasLoadedSessionContent, setHasLoadedSessionContent] = useState(false)
 
   // Initialize audio capture once for the entire working area
   useEffect(() => {
@@ -63,6 +66,12 @@ function WorkingAreaContent({
                 voiceChunkLength: data.settings.voice_chunk_length,
                 voiceChunksNumber: data.settings.voice_chunks_number
               })
+              
+              // Set the active session ID from settings if available
+              if (data.settings.active_session_id) {
+                console.log('Setting active session from settings:', data.settings.active_session_id)
+                setSelectedSessionId(data.settings.active_session_id)
+              }
             }
           }
         } catch (error) {
@@ -129,6 +138,13 @@ function WorkingAreaContent({
       setAnalysisError(null)
       // Set loading state for automatic mind map generation
       setIsGeneratingAutomaticMindMap(true)
+      
+      // If a session is selected, refresh the session content to include the new analysis
+      if (selectedSessionId) {
+        setTimeout(() => {
+          loadSessionContent(selectedSessionId, false)
+        }, 1000) // Wait 1 second for database to be updated
+      }
     })
 
     const unregisterError = WebSocketService.onError((errorMsg: string) => {
@@ -139,7 +155,7 @@ function WorkingAreaContent({
       unregister()
       unregisterError()
     }
-  }, [])
+  }, [selectedSessionId])
 
   // Register for mind map results - this persists across panel expansion/collapse
   useEffect(() => {
@@ -174,11 +190,19 @@ function WorkingAreaContent({
       setSessionTranscriptions([])
       setSessionLLMResults([])
       setSessionMindMaps([])
+      setHasLoadedSessionContent(false)
     }
-  }, [selectedSessionId])
+    
+    // Notify parent component of session ID change
+    onSessionIdChange?.(selectedSessionId)
+  }, [selectedSessionId, onSessionIdChange])
 
-  const loadSessionContent = async (sessionId: string) => {
-    setIsLoadingSessionContent(true)
+  const loadSessionContent = async (sessionId: string, showLoading: boolean = true) => {
+    // Only show loading if requested and we haven't loaded content for this session yet
+    if (showLoading && !hasLoadedSessionContent) {
+      setIsLoadingSessionContent(true)
+    }
+    
     try {
       console.log('Loading session content for session ID:', sessionId)
       // Load session transcripts
@@ -207,6 +231,7 @@ function WorkingAreaContent({
       const llmResponse = await fetch(`http://localhost:8000/api/sessions/${sessionId}/llm-results`)
       if (llmResponse.ok) {
         const llmData = await llmResponse.json()
+        console.log('Session LLM results response:', llmData)
         if (llmData.success) {
           const llmResults = llmData.llm_results.map((result: any) => ({
             session_id: sessionId,
@@ -215,8 +240,14 @@ function WorkingAreaContent({
             analysis: result.response,
             timestamp: result.created_at
           }))
-          setSessionLLMResults(llmResults)
+          // Sort by timestamp in descending order (newest first)
+          const sortedResults = llmResults.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+          console.log('Processed LLM results:', sortedResults)
+          console.log('First 3 results after sorting:', sortedResults.slice(0, 3).map((r: any) => ({ id: r.llm_result_id, timestamp: r.timestamp, date: new Date(r.timestamp) })))
+          setSessionLLMResults(sortedResults)
         }
+      } else {
+        console.error('Failed to load session LLM results:', llmResponse.status)
       }
 
       // Load session mind maps
@@ -236,12 +267,17 @@ function WorkingAreaContent({
     } catch (error) {
       console.error('Failed to load session content:', error)
     } finally {
-      setIsLoadingSessionContent(false)
+      if (showLoading) {
+        setIsLoadingSessionContent(false)
+        setHasLoadedSessionContent(true)
+      }
     }
   }
 
   const handleSessionSelect = (sessionId: string) => {
     setSelectedSessionId(sessionId)
+    // Reset the loaded flag when selecting a new session
+    setHasLoadedSessionContent(false)
   }
 
   const handleTranscriptionReceived = (transcription: TranscriptionResult) => {
@@ -274,9 +310,9 @@ function WorkingAreaContent({
           return newTranscriptions
         })
         
-        // Also refresh from database to ensure consistency
+        // Also refresh from database to ensure consistency, but don't show loading
         setTimeout(() => {
-          loadSessionContent(sessionId!)
+          loadSessionContent(sessionId!, false)
         }, 1000) // Wait 1 second for database to be updated
       } else {
         console.log('No session ID available, not adding to session transcriptions')
@@ -325,7 +361,7 @@ function WorkingAreaContent({
           setMindMapData(data.mind_map)
           
           // Also refresh session content to get the updated mind maps
-          await loadSessionContent(selectedSessionId)
+          await loadSessionContent(selectedSessionId, false)
         } else {
           setMindMapError('Failed to generate mind map')
         }
@@ -338,6 +374,41 @@ function WorkingAreaContent({
       setMindMapError('Failed to generate mind map')
     } finally {
       setIsGeneratingRandomMindMap(false)
+    }
+  }
+
+  const generateSummary = async () => {
+    if (!selectedSessionId) return
+    
+    setAnalysisError(null)
+    // Clear any existing session analysis to ensure new summary is displayed
+    setSessionAnalysis(null)
+    
+    try {
+      const response = await fetch(`http://localhost:8000/llm/process-session/${selectedSessionId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          console.log('Summary generated successfully:', data)
+          
+          // Refresh session content to get the new summary
+          await loadSessionContent(selectedSessionId, false)
+        } else {
+          setAnalysisError('Failed to generate summary')
+        }
+      } else {
+        const errorData = await response.json()
+        setAnalysisError(errorData.detail || 'Failed to generate summary')
+      }
+    } catch (error) {
+      console.error('Error generating summary:', error)
+      setAnalysisError('Failed to generate summary')
     }
   }
 
@@ -449,23 +520,24 @@ function WorkingAreaContent({
             />
           ) : expandedPanel.type === 'llm_summary' ? (
             <LLMSummaryPanel 
-              sessionAnalysis={selectedSessionId && sessionLLMResults.length > 0 ? sessionLLMResults[0] : sessionAnalysis}
+              sessionAnalysis={sessionAnalysis}
               error={analysisError}
               onClearAnalysis={clearSessionAnalysis}
               selectedSessionId={selectedSessionId}
               sessionLLMResults={sessionLLMResults}
               isLoadingSessionContent={isLoadingSessionContent}
+              onGenerateSummary={generateSummary}
             />
           ) : expandedPanel.type === 'settings' ? (
-            <SettingsPanel 
-              onSessionSelect={handleSessionSelect} 
-              selectedSessionId={selectedSessionId}
-              onSessionContentChanged={() => {
-                if (selectedSessionId) {
-                  loadSessionContent(selectedSessionId)
-                }
-              }}
-            />
+                          <SettingsPanel 
+                onSessionSelect={handleSessionSelect} 
+                selectedSessionId={selectedSessionId}
+                onSessionContentChanged={() => {
+                  if (selectedSessionId) {
+                    loadSessionContent(selectedSessionId, false)
+                  }
+                }}
+              />
                             ) : (
                     <MindMapPanel 
                       mindMapData={selectedSessionId && sessionMindMaps.length > 0 ? sessionMindMaps[sessionMindMaps.length - 1] : mindMapData}
@@ -535,12 +607,13 @@ function WorkingAreaContent({
                     />
                   ) : panel.type === 'llm_summary' ? (
                     <LLMSummaryPanel 
-                      sessionAnalysis={selectedSessionId && sessionLLMResults.length > 0 ? sessionLLMResults[0] : sessionAnalysis}
+                      sessionAnalysis={sessionAnalysis}
                       error={analysisError}
                       onClearAnalysis={clearSessionAnalysis}
                       selectedSessionId={selectedSessionId}
                       sessionLLMResults={sessionLLMResults}
                       isLoadingSessionContent={isLoadingSessionContent}
+                      onGenerateSummary={generateSummary}
                     />
                               ) : panel.type === 'settings' ? (
               <SettingsPanel 
@@ -548,7 +621,7 @@ function WorkingAreaContent({
                 selectedSessionId={selectedSessionId}
                 onSessionContentChanged={() => {
                   if (selectedSessionId) {
-                    loadSessionContent(selectedSessionId)
+                    loadSessionContent(selectedSessionId, false)
                   }
                 }}
               />
@@ -577,7 +650,8 @@ function WorkingAreaContent({
 export function WorkingArea({ 
   isListening, 
   onStartListening, 
-  onStopListening 
+  onStopListening,
+  onSessionIdChange
 }: WorkingAreaContentProps) {
   return (
     <PanelLayoutProvider>
@@ -585,6 +659,7 @@ export function WorkingArea({
         isListening={isListening}
         onStartListening={onStartListening}
         onStopListening={onStopListening}
+        onSessionIdChange={onSessionIdChange}
       />
     </PanelLayoutProvider>
   )

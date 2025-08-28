@@ -18,17 +18,36 @@ export function TranscriptionPanel({
   isLoadingSessionContent = false
 }: TranscriptionPanelProps) {
   
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
+  // Get the full session transcript (all transcription texts combined)
+  const getFullSessionTranscript = () => {
+    if (transcriptionHistory.length === 0) return ''
+    
+    // Combine all transcription texts in chronological order (oldest first, newest last)
+    return transcriptionHistory
+      .slice() // Create a copy to avoid mutating the original array
+      .reverse() // Reverse to get chronological order (oldest first)
+      .map(transcription => transcription.text)
+      .join(' ')
   }
 
-  const downloadTranscription = (transcription: TranscriptionResult) => {
-    const content = `Transcription: ${transcription.text}\nLanguage: ${transcription.language}\nModel: ${transcription.model}\nTimestamp: ${transcription.timestamp}`
+  const copyToClipboard = () => {
+    const fullTranscript = getFullSessionTranscript()
+    if (fullTranscript) {
+      navigator.clipboard.writeText(fullTranscript)
+    }
+  }
+
+  const downloadTranscription = () => {
+    const fullTranscript = getFullSessionTranscript()
+    if (!fullTranscript) return
+
+    const sessionId = selectedSessionId ? selectedSessionId.slice(-8) : 'session'
+    const content = `Session Transcript (${sessionId})\n\n${fullTranscript}`
     const blob = new Blob([content], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `transcription_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`
+    a.download = `session_transcript_${sessionId}_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -56,7 +75,7 @@ export function TranscriptionPanel({
       {/* Live Transcription */}
       <div className="mb-4">
         <div className="p-3 bg-muted rounded-md min-h-[80px] flex items-center justify-center">
-          {isLoadingSessionContent ? (
+          {isLoadingSessionContent && !liveTranscription ? (
             <div className="flex items-center space-x-2">
               <Loader2 className="w-4 h-4 animate-spin" />
               <span className="text-muted-foreground">Loading session content...</span>
@@ -77,15 +96,15 @@ export function TranscriptionPanel({
             <Button 
               variant="outline"
               size="sm"
-              onClick={() => copyToClipboard(liveTranscription)}
-              disabled={!liveTranscription}
+              onClick={copyToClipboard}
+              disabled={transcriptionHistory.length === 0}
             >
               <Copy className="w-3 h-3" />
             </Button>
             <Button 
               variant="outline"
               size="sm"
-              onClick={() => downloadTranscription(transcriptionHistory[0])}
+              onClick={downloadTranscription}
               disabled={transcriptionHistory.length === 0}
             >
               <Download className="w-3 h-3" />
@@ -101,7 +120,7 @@ export function TranscriptionPanel({
           </div>
         </div>
         <div className="flex-1 space-y-2 overflow-y-auto">
-          {isLoadingSessionContent ? (
+          {isLoadingSessionContent && transcriptionHistory.length === 0 ? (
             <div className="flex items-center justify-center py-8">
               <div className="flex items-center space-x-2">
                 <Loader2 className="w-4 h-4 animate-spin" />

@@ -450,3 +450,31 @@ GET /api/mind-maps/{id}
 - Mind map generation
 - Historical data persistence
 
+## Settings Management
+
+### Settings Types
+1. **Persistent Settings**: Stored in database, survive application restarts
+2. **Temporary Settings**: Applied immediately but not saved to database
+
+### Settings Application Flow
+1. **Frontend**: User modifies settings in SettingsPanel
+2. **Apply Now (Temporary)**: 
+   - Updates audio capture settings immediately
+   - Sends LLM settings to backend for temporary application
+   - Settings are applied to current session only
+3. **Save Settings**: 
+   - Saves all settings to database
+   - Settings persist across application restarts
+
+### LLM Settings Fix
+**Issue**: The "Apply Now (Temporary)" button was not updating LLM analysis prompts because LLMService instances were created fresh each time and weren't aware of temporary settings. The WebSocketService and API routes were creating separate SettingsService instances, so temporary settings weren't shared.
+
+**Solution**: 
+1. Added class-level temporary settings cache in SettingsService (shared across all instances)
+2. Modified `get_or_create_user_settings()` to apply temporary settings
+3. Added `/api/settings/apply-temporary` endpoint
+4. Updated frontend to send LLM settings for temporary application
+5. Ensured all SettingsService instances share the same temporary settings cache
+
+**Result**: LLM analysis now uses the updated prompt immediately when "Apply Now (Temporary)" is clicked, regardless of which SettingsService instance is used.
+

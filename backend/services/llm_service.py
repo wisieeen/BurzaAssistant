@@ -36,7 +36,8 @@ Please provide:
 3. Any questions, concerns, or action items identified
 4. Overall sentiment or tone of the conversation
 
-Please be concise but thorough in your analysis."""
+Use clear formatting with line breaks and bullet points for better readability.
+Please, be concise, return only summary and USE ONLY INFORMATION IN TRANSCRIPT!!!"""
         
         self.mind_map_prompt = """Please analyze the following transcript and create a mind map of concepts and relationships.
 
@@ -107,7 +108,15 @@ Please return ONLY the corrected JSON:"""
                 self.task_prompt = settings.ollama_task_prompt
                 if settings.ollama_mind_map_prompt:
                     self.mind_map_prompt = settings.ollama_mind_map_prompt
+                
+                # Log settings update
                 logger.info(f"LLMService updated with settings - Model: {self.model_name}")
+                
+                # Check if temporary settings are being applied
+                temp_settings = self.settings_service.get_temporary_settings()
+                if temp_settings:
+                    logger.info(f"Temporary settings applied: {list(temp_settings.keys())}")
+                    
         except Exception as e:
             logger.warning(f"Failed to update LLMService settings: {e}")
     
@@ -131,6 +140,14 @@ Please return ONLY the corrected JSON:"""
         if mind_map_prompt:
             self.mind_map_prompt = mind_map_prompt
             logger.info("LLMService mind map prompt updated")
+    
+    def refresh_settings_from_service(self):
+        """
+        Refresh settings from the settings service (useful when temporary settings are applied)
+        """
+        if self.settings_service:
+            self._update_settings_from_service()
+            logger.info("LLMService settings refreshed from service")
     
     def _test_ollama_connection(self):
         """Test connection to Ollama and verify model availability"""

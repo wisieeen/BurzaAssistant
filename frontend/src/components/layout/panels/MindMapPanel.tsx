@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Loader2, Network, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
-import { WebSocketService } from '@/services/websocketService'
 
 export interface MindMapNode {
   id: string
@@ -736,7 +735,7 @@ export function MindMapPanel({
   }
 
   const getDisplayContent = () => {
-    if (isLoadingSessionContent) {
+    if (isLoadingSessionContent && !mindMapData && sessionMindMaps.length === 0) {
       return (
         <div className="flex items-center justify-center py-8">
           <div className="flex items-center space-x-2">

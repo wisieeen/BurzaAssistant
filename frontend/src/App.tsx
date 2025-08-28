@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react'
+import { Button } from '@/components/ui/button'
+import { Settings } from 'lucide-react'
 import { Sidebar } from '@/components/layout/Sidebar/Sidebar'
 import { WorkingArea } from '@/components/layout/WorkingArea/WorkingArea'
-import { Button } from '@/components/ui/button'
-import { Play, Pause, Square, Circle, Wifi, Settings } from 'lucide-react'
 import { AudioCaptureService, AudioLevelData } from '@/services/audioCaptureService'
+import { WebSocketService } from '@/services/websocketService'
+import './index.css'
 
 function App() {
   const [isListening, setIsListening] = useState(false)
-  const [isConnected, setIsConnected] = useState(true)
-  const [isAudioInitialized, setIsAudioInitialized] = useState(false)
-  const [audioLevel, setAudioLevel] = useState(0)
+  const [isConnected, setIsConnected] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [audioLevel, setAudioLevel] = useState(0)
+  const [isAudioInitialized, setIsAudioInitialized] = useState(false)
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
 
   // Initialize audio capture
   useEffect(() => {
@@ -42,6 +45,18 @@ function App() {
     }
   }, [])
 
+  // Monitor WebSocket connection status
+  useEffect(() => {
+    const checkConnection = () => {
+      setIsConnected(WebSocketService.getConnectionStatus())
+    }
+
+    checkConnection()
+    const interval = setInterval(checkConnection, 1000)
+
+    return () => clearInterval(interval)
+  }, [])
+
   // Register for audio level updates
   useEffect(() => {
     const unregisterAudioLevel = AudioCaptureService.onAudioLevelChange((data: AudioLevelData) => {
@@ -58,7 +73,8 @@ function App() {
     
     setIsProcessing(true)
     try {
-      const success = await AudioCaptureService.startRecording()
+      // Use the selected session ID if available
+      const success = await AudioCaptureService.startRecording(selectedSessionId || undefined)
       if (success) {
         setIsListening(true)
         console.log('Started audio recording and streaming')
@@ -89,6 +105,11 @@ function App() {
     } finally {
       setIsProcessing(false)
     }
+  }
+
+  const handleSessionIdChange = (sessionId: string | null) => {
+    setSelectedSessionId(sessionId)
+    console.log('App: Session ID changed to:', sessionId)
   }
 
   return (
@@ -135,6 +156,7 @@ function App() {
           isListening={isListening}
           onStartListening={handleStartListening}
           onStopListening={handleStopListening}
+          onSessionIdChange={handleSessionIdChange}
         />
       </div>
     </div>

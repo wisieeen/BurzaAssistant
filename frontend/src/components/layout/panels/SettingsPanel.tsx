@@ -274,7 +274,30 @@ export function SettingsPanel({ onSessionSelect, selectedSessionId, onSessionCon
         chunkDuration: settings.voiceChunkLength,
         chunksToAccumulate: settings.voiceChunksNumber
       })
-      console.log('Settings applied immediately')
+      console.log('Audio capture settings applied immediately')
+      
+      // Also send LLM settings to backend for immediate use
+      try {
+        const llmSettings = {
+          ollamaModel: settings.ollamaModel,
+          ollamaTaskPrompt: settings.ollamaTaskPrompt,
+          ollamaMindMapPrompt: settings.ollamaMindMapPrompt
+        }
+        
+        const response = await fetch('http://localhost:8000/api/settings/apply-temporary', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(llmSettings)
+        })
+        
+        if (response.ok) {
+          console.log('LLM settings applied immediately to backend')
+        } else {
+          console.warn('Failed to apply LLM settings to backend, but audio settings were updated')
+        }
+      } catch (error) {
+        console.warn('Failed to apply LLM settings to backend:', error)
+      }
       
       // Show temporary success message
       setSaveStatus('saved')
