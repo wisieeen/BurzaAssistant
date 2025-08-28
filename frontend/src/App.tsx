@@ -3,7 +3,7 @@ import { Sidebar } from '@/components/layout/Sidebar/Sidebar'
 import { WorkingArea } from '@/components/layout/WorkingArea/WorkingArea'
 import { Button } from '@/components/ui/button'
 import { Play, Pause, Square, Circle, Wifi, Settings } from 'lucide-react'
-import { AudioCaptureService, AudioLevelData } from '@/lib/audioCaptureService'
+import { AudioCaptureService, AudioLevelData } from '@/services/audioCaptureService'
 
 function App() {
   const [isListening, setIsListening] = useState(false)

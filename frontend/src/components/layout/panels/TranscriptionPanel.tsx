@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Copy, Download, Trash2, Loader2 } from 'lucide-react'
-import { TranscriptionResult } from '@/lib/websocketService'
+import { TranscriptionResult } from '@/services/websocketService'
 
 interface TranscriptionPanelProps {
   liveTranscription?: string

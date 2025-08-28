@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Loader2, Network, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
-import { WebSocketService } from '@/lib/websocketService'
+import { WebSocketService } from '@/services/websocketService'
 
 export interface MindMapNode {
   id: string

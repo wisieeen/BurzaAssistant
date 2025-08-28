@@ -2,11 +2,11 @@ import { DndContext, DragEndEvent, closestCenter, DragStartEvent } from '@dnd-ki
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
 import { Panel, VoiceInputPanel, TranscriptionPanel, LLMSummaryPanel, MindMapPanel, SettingsPanel } from '@/components/layout/panels'
 import { PanelLayoutProvider, usePanelLayout } from '@/contexts/PanelLayoutContext'
-import { TranscriptionResult } from '@/lib/websocketService'
+import { TranscriptionResult } from '@/services/websocketService'
 import { SessionAnalysis } from '@/components/layout/panels/LLMSummaryPanel'
 import { MindMapData } from '@/components/layout/panels/MindMapPanel'
-import { WebSocketService } from '@/lib/websocketService'
-import { AudioCaptureService, AudioLevelData } from '@/lib/audioCaptureService'
+import { WebSocketService } from '@/services/websocketService'
+import { AudioCaptureService, AudioLevelData } from '@/services/audioCaptureService'
 import { useState, useEffect } from 'react'
 
 interface WorkingAreaContentProps {
