@@ -228,6 +228,36 @@ class SettingsService:
         valid_models = ['tiny', 'base', 'small', 'medium', 'large']
         return model in valid_models
     
+    def validate_ollama_model(self, model: str) -> bool:
+        """
+        Validate Ollama model name (including 'none' option)
+        
+        Args:
+            model: Model name to validate
+            
+        Returns:
+            True if valid, False otherwise
+        """
+        # 'none' is a special value that disables processing
+        if model == 'none':
+            return True
+        
+        # For other models, we can't easily validate without checking Ollama
+        # So we'll accept any non-empty string that's not 'none'
+        return isinstance(model, str) and model.strip() != ''
+    
+    def is_model_disabled(self, model: str) -> bool:
+        """
+        Check if a model is disabled (set to 'none')
+        
+        Args:
+            model: Model name to check
+            
+        Returns:
+            True if model is disabled, False otherwise
+        """
+        return model == 'none'
+    
     def get_settings_dict(self, user_id: str = "default") -> Dict[str, Any]:
         """
         Get user settings as dictionary

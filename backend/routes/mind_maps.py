@@ -38,7 +38,7 @@ async def generate_mind_map(
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
         
         # Generate mind map
-        mind_map_result = llm_service.process_session_mind_map(session_id, use_random_seed)
+        mind_map_result = await llm_service.process_session_mind_map(session_id, use_random_seed)
         
         if not mind_map_result:
             raise HTTPException(status_code=500, detail="Failed to generate mind map")

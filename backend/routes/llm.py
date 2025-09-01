@@ -229,7 +229,7 @@ async def process_session_transcripts(
             )
         
         # Process the session
-        result = llm_service.process_session_transcripts(session_id)
+        result = await llm_service.process_session_transcripts(session_id)
         
         if result:
             # Save the result to database
@@ -256,6 +256,38 @@ async def process_session_transcripts(
         raise HTTPException(
             status_code=500, 
             detail=f"Failed to process session: {str(e)}"
+        )
+
+@router.get("/processing-status/{session_id}")
+async def get_processing_status(session_id: str):
+    """
+    Get processing status for a session
+    
+    Args:
+        session_id: Session ID to check
+        
+    Returns:
+        Processing status information
+    """
+    try:
+        from services.llm_service import processing_state
+        
+        status = await processing_state.get_processing_status(session_id)
+        
+        return {
+            "success": True,
+            "session_id": session_id,
+            "summary_processing": status['summary_processing'],
+            "mind_map_processing": status['mind_map_processing'],
+            "any_processing": status['any_processing'],
+            "summary_start_time": status.get('summary_start_time'),
+            "mind_map_start_time": status.get('mind_map_start_time')
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get processing status: {str(e)}"
         )
 
 @router.get("/health")

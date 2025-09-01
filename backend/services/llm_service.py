@@ -2,6 +2,7 @@ import time
 import logging
 import json
 import re
+import asyncio
 from typing import Dict, Any, Optional, Tuple
 import ollama
 
@@ -11,6 +12,122 @@ from services.database_service import DatabaseService
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+class ProcessingStateManager:
+    """
+    Manages processing state to prevent overlapping LLM operations
+    """
+    
+    def __init__(self):
+        self.processing_sessions: Dict[str, Dict[str, Any]] = {}
+        self.lock = asyncio.Lock()
+    
+    async def is_processing(self, session_id: str, operation_type: str = "any") -> bool:
+        """
+        Check if a session is currently being processed
+        
+        Args:
+            session_id: Session ID to check
+            operation_type: Type of operation ("summary", "mind_map", "any")
+            
+        Returns:
+            True if processing is active
+        """
+        async with self.lock:
+            if session_id not in self.processing_sessions:
+                return False
+            
+            session_state = self.processing_sessions[session_id]
+            
+            if operation_type == "any":
+                return session_state.get("summary_processing", False) or session_state.get("mind_map_processing", False)
+            else:
+                return session_state.get(f"{operation_type}_processing", False)
+    
+    async def start_processing(self, session_id: str, operation_type: str) -> bool:
+        """
+        Start processing for a session and operation type
+        
+        Args:
+            session_id: Session ID
+            operation_type: Type of operation ("summary", "mind_map")
+            
+        Returns:
+            True if processing was started, False if already processing
+        """
+        async with self.lock:
+            if session_id not in self.processing_sessions:
+                self.processing_sessions[session_id] = {}
+            
+            session_state = self.processing_sessions[session_id]
+            processing_key = f"{operation_type}_processing"
+            
+            if session_state.get(processing_key, False):
+                logger.info(f"Session {session_id} already processing {operation_type}")
+                return False
+            
+            session_state[processing_key] = True
+            session_state[f"{operation_type}_start_time"] = time.time()
+            logger.info(f"Started {operation_type} processing for session {session_id}")
+            return True
+    
+    async def stop_processing(self, session_id: str, operation_type: str):
+        """
+        Stop processing for a session and operation type
+        
+        Args:
+            session_id: Session ID
+            operation_type: Type of operation ("summary", "mind_map")
+        """
+        async with self.lock:
+            if session_id in self.processing_sessions:
+                session_state = self.processing_sessions[session_id]
+                processing_key = f"{operation_type}_processing"
+                
+                if session_state.get(processing_key, False):
+                    start_time = session_state.get(f"{operation_type}_start_time", time.time())
+                    duration = time.time() - start_time
+                    session_state[processing_key] = False
+                    session_state[f"{operation_type}_start_time"] = None
+                    logger.info(f"Stopped {operation_type} processing for session {session_id} (duration: {duration:.2f}s)")
+                
+                # Clean up session if no processing is active
+                if not (session_state.get("summary_processing", False) or session_state.get("mind_map_processing", False)):
+                    del self.processing_sessions[session_id]
+                    logger.info(f"Cleaned up processing state for session {session_id}")
+    
+    async def get_processing_status(self, session_id: str) -> Dict[str, Any]:
+        """
+        Get processing status for a session
+        
+        Args:
+            session_id: Session ID
+            
+        Returns:
+            Dictionary with processing status
+        """
+        async with self.lock:
+            if session_id not in self.processing_sessions:
+                return {
+                    "summary_processing": False,
+                    "mind_map_processing": False,
+                    "any_processing": False
+                }
+            
+            session_state = self.processing_sessions[session_id]
+            summary_processing = session_state.get("summary_processing", False)
+            mind_map_processing = session_state.get("mind_map_processing", False)
+            
+            return {
+                "summary_processing": summary_processing,
+                "mind_map_processing": mind_map_processing,
+                "any_processing": summary_processing or mind_map_processing,
+                "summary_start_time": session_state.get("summary_start_time"),
+                "mind_map_start_time": session_state.get("mind_map_start_time")
+            }
+
+# Global processing state manager
+processing_state = ProcessingStateManager()
 
 class LLMService:
     """
@@ -228,6 +345,11 @@ Please return ONLY the corrected JSON:"""
             LLMResultCreate object with the processing results, or None if failed
         """
         try:
+            # Check if summary model is disabled
+            if self.summary_model == 'none':
+                logger.info(f"Summary model is disabled ('none'), skipping transcript {transcript_id}")
+                return None
+            
             start_time = time.time()
             
             # Create the prompt
@@ -347,9 +469,12 @@ Please return ONLY the corrected JSON:"""
                 "general_model": self.model_name,
                 "summary_model": self.summary_model,
                 "mind_map_model": self.mind_map_model,
-                "general_available": self.model_name in model_names,
-                "summary_available": self.summary_model in model_names,
-                "mind_map_available": self.mind_map_model in model_names,
+                "general_available": self.model_name == 'none' or self.model_name in model_names,
+                "summary_available": self.summary_model == 'none' or self.summary_model in model_names,
+                "mind_map_available": self.mind_map_model == 'none' or self.mind_map_model in model_names,
+                "general_disabled": self.model_name == 'none',
+                "summary_disabled": self.summary_model == 'none',
+                "mind_map_disabled": self.mind_map_model == 'none',
                 "all_models": model_names,
                 "status": "connected" if models else "disconnected"
             }
@@ -358,9 +483,12 @@ Please return ONLY the corrected JSON:"""
                 "general_model": self.model_name,
                 "summary_model": self.summary_model,
                 "mind_map_model": self.mind_map_model,
-                "general_available": False,
-                "summary_available": False,
-                "mind_map_available": False,
+                "general_available": self.model_name == 'none',
+                "summary_available": self.summary_model == 'none',
+                "mind_map_available": self.mind_map_model == 'none',
+                "general_disabled": self.model_name == 'none',
+                "summary_disabled": self.summary_model == 'none',
+                "mind_map_disabled": self.mind_map_model == 'none',
                 "error": str(e),
                 "status": "error"
             }
@@ -406,7 +534,7 @@ Please return ONLY the corrected JSON:"""
         
         return prompt
     
-    def process_session_transcripts(self, session_id: str) -> Optional[LLMResultCreate]:
+    async def process_session_transcripts(self, session_id: str) -> Optional[LLMResultCreate]:
         """
         Process all transcripts from a session as a single combined text
         
@@ -417,57 +545,79 @@ Please return ONLY the corrected JSON:"""
             LLMResultCreate object with the processing results, or None if failed
         """
         try:
-            # Get all transcripts for the session
-            session_transcripts = self.db_service.get_session_transcripts(session_id)
-            
-            if not session_transcripts:
-                logger.warning(f"No transcripts found for session {session_id}")
+            # Check if summary model is disabled
+            if self.summary_model == 'none':
+                logger.info(f"Summary model is disabled ('none'), skipping session {session_id}")
                 return None
             
-            # Combine all transcript texts
-            combined_text = "\n\n".join([
-                f"[Transcript {t.id}]: {t.text}" 
-                for t in session_transcripts
-            ])
+            # Check if already processing
+            if await processing_state.is_processing(session_id, "summary"):
+                logger.info(f"Session {session_id} already processing summary, skipping")
+                return None
             
-            logger.info(f"Processing session {session_id} with {len(session_transcripts)} transcripts using summary model: {self.summary_model}")
+            # Start processing
+            if not await processing_state.start_processing(session_id, "summary"):
+                logger.info(f"Failed to start summary processing for session {session_id}")
+                return None
             
-            # Create session analysis prompt
-            prompt = self.create_session_analysis_prompt(combined_text, session_id)
-            
-            start_time = time.time()
-            
-            # Call Ollama
-            response = ollama.chat(
-                model=self.summary_model,
-                messages=[
-                    {
-                        'role': 'user',
-                        'content': prompt
-                    }
-                ]
-            )
-            
-            # Extract the response
-            llm_response = response['message']['content']
-            processing_time = time.time() - start_time
-            
-            logger.info(f"Session LLM processing completed in {processing_time:.2f} seconds")
-            
-            # Create the result object (use the first transcript ID as reference)
-            first_transcript_id = session_transcripts[0].id
-            result = LLMResultCreate(
-                transcript_id=first_transcript_id,  # Reference to first transcript
-                prompt=prompt,
-                response=llm_response,
-                model=self.summary_model,
-                processing_time=processing_time
-            )
-            
-            return result
+            try:
+                # Get all transcripts for the session
+                session_transcripts = self.db_service.get_session_transcripts(session_id)
+                
+                if not session_transcripts:
+                    logger.warning(f"No transcripts found for session {session_id}")
+                    return None
+                
+                # Combine all transcript texts
+                combined_text = "\n\n".join([
+                    f"[Transcript {t.id}]: {t.text}" 
+                    for t in session_transcripts
+                ])
+                
+                logger.info(f"Processing session {session_id} with {len(session_transcripts)} transcripts using summary model: {self.summary_model}")
+                
+                # Create session analysis prompt
+                prompt = self.create_session_analysis_prompt(combined_text, session_id)
+                
+                start_time = time.time()
+                
+                # Call Ollama
+                response = ollama.chat(
+                    model=self.summary_model,
+                    messages=[
+                        {
+                            'role': 'user',
+                            'content': prompt
+                        }
+                    ]
+                )
+                
+                # Extract the response
+                llm_response = response['message']['content']
+                processing_time = time.time() - start_time
+                
+                logger.info(f"Session LLM processing completed in {processing_time:.2f} seconds")
+                
+                # Create the result object (use the first transcript ID as reference)
+                first_transcript_id = session_transcripts[0].id
+                result = LLMResultCreate(
+                    transcript_id=first_transcript_id,  # Reference to first transcript
+                    prompt=prompt,
+                    response=llm_response,
+                    model=self.summary_model,
+                    processing_time=processing_time
+                )
+                
+                return result
+                
+            finally:
+                # Always stop processing when done
+                await processing_state.stop_processing(session_id, "summary")
             
         except Exception as e:
             logger.error(f"Failed to process session {session_id}: {e}")
+            # Ensure processing is stopped even on error
+            await processing_state.stop_processing(session_id, "summary")
             return None
     
     def _attempt_json_correction(self, invalid_json: str, error_details: str, max_attempts: int = 3) -> Tuple[Optional[Dict], int]:
@@ -595,7 +745,7 @@ Please return ONLY the corrected JSON:"""
                 logger.error(f"Failed to correct {context} JSON after {attempts} attempts")
                 return None
 
-    def process_session_mind_map(self, session_id: str, use_random_seed: bool = False) -> Optional[MindMapCreate]:
+    async def process_session_mind_map(self, session_id: str, use_random_seed: bool = False) -> Optional[MindMapCreate]:
         """
         Process all transcripts from a session to generate a mind map
         
@@ -607,67 +757,89 @@ Please return ONLY the corrected JSON:"""
             MindMapCreate object with the processing results, or None if failed
         """
         try:
-            # Get all transcripts for the session
-            session_transcripts = self.db_service.get_session_transcripts(session_id)
-            
-            if not session_transcripts:
-                logger.warning(f"No transcripts found for session {session_id}")
+            # Check if mind map model is disabled
+            if self.mind_map_model == 'none':
+                logger.info(f"Mind map model is disabled ('none'), skipping session {session_id}")
                 return None
             
-            # Combine all transcript texts
-            combined_text = "\n\n".join([
-                f"[Transcript {t.id}]: {t.text}" 
-                for t in session_transcripts
-            ])
-            
-            logger.info(f"Generating mind map for session {session_id} with {len(session_transcripts)} transcripts using mind map model: {self.mind_map_model}")
-            
-            # Create mind map prompt
-            prompt = self.create_mind_map_prompt(combined_text, session_id, use_random_seed)
-            
-            start_time = time.time()
-            
-            # Call Ollama
-            response = ollama.chat(
-                model=self.mind_map_model,
-                messages=[
-                    {
-                        'role': 'user',
-                        'content': prompt
-                    }
-                ]
-            )
-            
-            # Extract the response
-            llm_response = response['message']['content']
-            processing_time = time.time() - start_time
-            
-            logger.info(f"Mind map generation completed in {processing_time:.2f} seconds")
-            
-            # Parse the JSON response with correction
-            mind_map_data = self._parse_json_with_correction(llm_response, "mind map")
-            
-            if mind_map_data is None:
-                logger.error("Failed to parse mind map JSON even after correction attempts")
+            # Check if already processing
+            if await processing_state.is_processing(session_id, "mind_map"):
+                logger.info(f"Session {session_id} already processing mind map, skipping")
                 return None
             
-            # Validate the structure
-            if 'nodes' not in mind_map_data or 'edges' not in mind_map_data:
-                logger.error("Invalid mind map structure: missing nodes or edges")
+            # Start processing
+            if not await processing_state.start_processing(session_id, "mind_map"):
+                logger.info(f"Failed to start mind map processing for session {session_id}")
                 return None
             
-            # Create the result object
-            result = MindMapCreate(
-                session_id=session_id,
-                nodes=json.dumps(mind_map_data['nodes']),
-                edges=json.dumps(mind_map_data['edges']),
-                prompt=prompt,
-                model=self.mind_map_model,
-                processing_time=processing_time
-            )
-            
-            return result
+            try:
+                # Get all transcripts for the session
+                session_transcripts = self.db_service.get_session_transcripts(session_id)
+                
+                if not session_transcripts:
+                    logger.warning(f"No transcripts found for session {session_id}")
+                    return None
+                
+                # Combine all transcript texts
+                combined_text = "\n\n".join([
+                    f"[Transcript {t.id}]: {t.text}" 
+                    for t in session_transcripts
+                ])
+                
+                logger.info(f"Generating mind map for session {session_id} with {len(session_transcripts)} transcripts using mind map model: {self.mind_map_model}")
+                
+                # Create mind map prompt
+                prompt = self.create_mind_map_prompt(combined_text, session_id, use_random_seed)
+                
+                start_time = time.time()
+                
+                # Call Ollama
+                response = ollama.chat(
+                    model=self.mind_map_model,
+                    messages=[
+                        {
+                            'role': 'user',
+                            'content': prompt
+                        }
+                    ]
+                )
+                
+                # Extract the response
+                llm_response = response['message']['content']
+                processing_time = time.time() - start_time
+                
+                logger.info(f"Mind map generation completed in {processing_time:.2f} seconds")
+                
+                # Parse the JSON response with correction
+                mind_map_data = self._parse_json_with_correction(llm_response, "mind map")
+                
+                if mind_map_data is None:
+                    logger.error("Failed to parse mind map JSON even after correction attempts")
+                    return None
+                
+                # Validate the structure
+                if 'nodes' not in mind_map_data or 'edges' not in mind_map_data:
+                    logger.error("Invalid mind map structure: missing nodes or edges")
+                    return None
+                
+                # Create the result object
+                result = MindMapCreate(
+                    session_id=session_id,
+                    nodes=json.dumps(mind_map_data['nodes']),
+                    edges=json.dumps(mind_map_data['edges']),
+                    prompt=prompt,
+                    model=self.mind_map_model,
+                    processing_time=processing_time
+                )
+                
+                return result
+                
+            finally:
+                # Always stop processing when done
+                await processing_state.stop_processing(session_id, "mind_map")
             
         except Exception as e:
             logger.error(f"Failed to generate mind map for session {session_id}: {e}")
+            # Ensure processing is stopped even on error
+            await processing_state.stop_processing(session_id, "mind_map")
             return None

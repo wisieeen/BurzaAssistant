@@ -46,6 +46,7 @@ const WHISPER_MODELS = [
 
 // Fallback models in case backend is unavailable
 const FALLBACK_OLLAMA_MODELS = [
+  { id: 'none', name: 'None (Disabled)', description: 'Skip this type of processing' },
   { id: 'artifish/llama3.2-uncensored:latest', name: 'Llama 3.2 Uncensored', description: 'Current default model' },
   { id: 'llama2:latest', name: 'Llama 2', description: 'Meta\'s Llama 2 model' },
   { id: 'mistral:latest', name: 'Mistral', description: 'Mistral AI model' },
@@ -182,11 +183,13 @@ export function SettingsPanel({ onSessionSelect, selectedSessionId, onSessionCon
       if (response.ok) {
         const data = await response.json()
         if (data.success && data.models) {
-          const models = data.models.map((model: any) => ({
+          // Add 'none' option at the beginning
+          const noneOption = { id: 'none', name: 'None (Disabled)', description: 'Skip this type of processing' }
+          const models = [noneOption, ...data.models.map((model: any) => ({
             id: model.name,
             name: model.display_name || model.name,
             description: model.size && model.size !== 'Unknown' ? `${model.name} (${model.size})` : model.name
-          }))
+          }))]
           setAvailableOllamaModels(models)
           console.log('Ollama models loaded:', models)
         }

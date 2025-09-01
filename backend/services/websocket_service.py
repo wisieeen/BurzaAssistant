@@ -525,14 +525,23 @@ class WebSocketService:
         """
         try:
             # Import LLMService here to avoid circular imports
-            from services.llm_service import LLMService
+            from services.llm_service import LLMService, processing_state
+            
+            # Check if already processing
+            if await processing_state.is_processing(session_id, "any"):
+                logger.info(f"Session {session_id} already processing, skipping new transcript processing")
+                
+                # Send processing status to client
+                if session_id in self.active_connections:
+                    await self.send_processing_status(session_id)
+                return
             
             # Create LLM service instance with settings service
             llm_service = LLMService(self.db_service, self.settings_service)
             
             # Process the session (summary only)
             logger.info(f"Processing session transcripts for {session_id}")
-            result = llm_service.process_session_transcripts(session_id)
+            result = await llm_service.process_session_transcripts(session_id)
             
             if result:
                 # Save the result to database
@@ -574,7 +583,7 @@ class WebSocketService:
             logger.info(f"Starting independent mind map generation for session {session_id}")
             
             # Generate mind map
-            mind_map_result = llm_service.process_session_mind_map(session_id)
+            mind_map_result = await llm_service.process_session_mind_map(session_id)
             
             if mind_map_result:
                 # Save to database
@@ -608,6 +617,35 @@ class WebSocketService:
             logger.warning(f"Failed to generate mind map for session {session_id}: {mind_map_error}")
             import traceback
             logger.warning(f"Mind map error traceback: {traceback.format_exc()}")
+    
+    async def send_processing_status(self, session_id: str):
+        """
+        Send processing status to client
+        
+        Args:
+            session_id: Session ID
+        """
+        try:
+            from services.llm_service import processing_state
+            
+            status = await processing_state.get_processing_status(session_id)
+            
+            await self.send_message(self.active_connections[session_id], {
+                'type': 'processing_status',
+                'data': {
+                    'session_id': session_id,
+                    'summary_processing': status['summary_processing'],
+                    'mind_map_processing': status['mind_map_processing'],
+                    'any_processing': status['any_processing'],
+                    'summary_start_time': status.get('summary_start_time'),
+                    'mind_map_start_time': status.get('mind_map_start_time')
+                },
+                'timestamp': datetime.utcnow().isoformat(),
+                'sessionId': session_id
+            })
+            
+        except Exception as e:
+            logger.error(f"Failed to send processing status for session {session_id}: {e}")
     
     async def send_audio_level_update(self, websocket: WebSocket, session_id: str, level: int):
         """
