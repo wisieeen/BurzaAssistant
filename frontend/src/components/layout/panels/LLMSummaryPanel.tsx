@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Copy, Download, Loader2 } from 'lucide-react'
+import { Copy, Download, Loader2, Settings } from 'lucide-react'
+import { PanelSettingsMenu } from './PanelSettingsMenu'
 
 export interface SessionAnalysis {
   session_id: string
@@ -30,6 +32,7 @@ export function LLMSummaryPanel({
   isLoadingSessionContent = false,
   onGenerateSummary
 }: LLMSummaryPanelProps) {
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
 
   // Get the analysis content to copy/download
   const getAnalysisContent = () => {
@@ -290,6 +293,14 @@ export function LLMSummaryPanel({
               </Button>
             </>
           )}
+          <Button 
+            variant="outline"
+            size="sm"
+            onClick={() => setIsSettingsOpen(true)}
+            className="ml-2"
+          >
+            <Settings className="w-3 h-3" />
+          </Button>
         </div>
       </div>
 
@@ -307,6 +318,16 @@ export function LLMSummaryPanel({
       )}
 
       {getDisplayContent()}
+
+      {/* Panel Settings Menu */}
+      <PanelSettingsMenu
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onSettingsChange={(settings) => {
+          console.log('Panel settings changed:', settings)
+          // You can add additional logic here if needed when settings change
+        }}
+      />
     </div>
   )
 }

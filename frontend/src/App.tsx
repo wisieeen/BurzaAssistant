@@ -3,11 +3,12 @@ import { Button } from '@/components/ui/button'
 import { Settings } from 'lucide-react'
 import { Sidebar } from '@/components/layout/Sidebar/Sidebar'
 import { WorkingArea } from '@/components/layout/WorkingArea/WorkingArea'
+import { PanelLayoutProvider } from '@/contexts/PanelLayoutContext'
 import { AudioCaptureService, AudioLevelData } from '@/services/audioCaptureService'
 import { WebSocketService } from '@/services/websocketService'
 import './index.css'
 
-function App() {
+function AppContent() {
   const [isListening, setIsListening] = useState(false)
   const [isConnected, setIsConnected] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -160,6 +161,14 @@ function App() {
         />
       </div>
     </div>
+  )
+}
+
+function App() {
+  return (
+    <PanelLayoutProvider>
+      <AppContent />
+    </PanelLayoutProvider>
   )
 }
 

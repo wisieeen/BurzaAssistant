@@ -1,7 +1,7 @@
 import { DndContext, DragEndEvent, closestCenter, DragStartEvent } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
 import { Panel, VoiceInputPanel, TranscriptionPanel, LLMSummaryPanel, MindMapPanel, SettingsPanel } from '@/components/layout/panels'
-import { PanelLayoutProvider, usePanelLayout } from '@/contexts/PanelLayoutContext'
+import { usePanelLayout } from '@/contexts/PanelLayoutContext'
 import { TranscriptionResult } from '@/services/websocketService'
 import { SessionAnalysis } from '@/components/layout/panels/LLMSummaryPanel'
 import { MindMapData } from '@/components/layout/panels/MindMapPanel'
@@ -22,7 +22,14 @@ function WorkingAreaContent({
   onStopListening,
   onSessionIdChange
 }: WorkingAreaContentProps) {
-  const { panels, expandedPanelId, movePanel, expandPanel, collapsePanel } = usePanelLayout()
+  const { 
+    panels, 
+    currentLayout,
+    expandedPanelId, 
+    movePanel, 
+    expandPanel, 
+    collapsePanel 
+  } = usePanelLayout()
   
   // Centralized transcription state that persists across panel expansion/collapse
   const [liveTranscription, setLiveTranscription] = useState<string>('')
@@ -569,16 +576,20 @@ function WorkingAreaContent({
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="h-full grid grid-cols-2 grid-rows-2 gap-4 min-h-0">
+        <div className={`h-full grid gap-4 min-h-0 ${currentLayout.gridTemplate}`}>
           <SortableContext items={panels.map(p => p.id)} strategy={rectSortingStrategy}>
             {panels.map((panel) => {
+              const panelSize = currentLayout.panelSizes[panel.id] || {}
+              const rowSpan = panelSize.rowSpan ? `row-span-${panelSize.rowSpan}` : ''
+              const colSpan = panelSize.colSpan ? `col-span-${panelSize.colSpan}` : ''
+              
               return (
                 <Panel 
                   key={panel.id}
                   id={panel.id}
                   title={panel.title}
                   type={panel.type}
-                  className="col-span-1 row-span-1"
+                  className={`${rowSpan} ${colSpan}`}
                   onExpand={() => expandPanel(panel.id)}
                 >
                   {panel.type === 'mind_map' ? (
@@ -659,13 +670,11 @@ export function WorkingArea({
   onSessionIdChange
 }: WorkingAreaContentProps) {
   return (
-    <PanelLayoutProvider>
-      <WorkingAreaContent 
-        isListening={isListening}
-        onStartListening={onStartListening}
-        onStopListening={onStopListening}
-        onSessionIdChange={onSessionIdChange}
-      />
-    </PanelLayoutProvider>
+    <WorkingAreaContent 
+      isListening={isListening}
+      onStartListening={onStartListening}
+      onStopListening={onStopListening}
+      onSessionIdChange={onSessionIdChange}
+    />
   )
 }
