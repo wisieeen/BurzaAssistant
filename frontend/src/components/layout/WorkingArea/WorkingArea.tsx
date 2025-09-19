@@ -1,9 +1,8 @@
 import { DndContext, DragEndEvent, closestCenter, DragStartEvent } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
-import { Panel, VoiceInputPanel, TranscriptionPanel, LLMSummaryPanel, MindMapPanel, SettingsPanel } from '@/components/layout/panels'
+import { Panel, VoiceInputPanel, TranscriptionPanel, CustomLLMPanel, MindMapPanel, SettingsPanel } from '@/components/layout/panels'
 import { usePanelLayout } from '@/contexts/PanelLayoutContext'
 import { TranscriptionResult } from '@/services/websocketService'
-import { SessionAnalysis } from '@/components/layout/panels/LLMSummaryPanel'
 import { MindMapData } from '@/components/layout/panels/MindMapPanel'
 import { WebSocketService } from '@/services/websocketService'
 import { AudioCaptureService, AudioLevelData } from '@/services/audioCaptureService'
@@ -28,7 +27,8 @@ function WorkingAreaContent({
     expandedPanelId, 
     movePanel, 
     expandPanel, 
-    collapsePanel 
+    collapsePanel,
+    removeCustomLLMPanel
   } = usePanelLayout()
   
   // Centralized transcription state that persists across panel expansion/collapse
@@ -36,14 +36,13 @@ function WorkingAreaContent({
   const [transcriptionHistory, setTranscriptionHistory] = useState<TranscriptionResult[]>([])
   
   // Centralized session analysis state that persists across panel expansion/collapse
-  const [sessionAnalysis, setSessionAnalysis] = useState<SessionAnalysis | null>(null)
-  const [analysisError, setAnalysisError] = useState<string | null>(null)
   
   // Centralized mind map state that persists across panel expansion/collapse
   const [mindMapData, setMindMapData] = useState<MindMapData | null>(null)
   const [mindMapError, setMindMapError] = useState<string | null>(null)
   const [isGeneratingRandomMindMap, setIsGeneratingRandomMindMap] = useState(false)
   const [isGeneratingAutomaticMindMap, setIsGeneratingAutomaticMindMap] = useState(false)
+  
   
   // Centralized audio capture state
   const [isAudioInitialized, setIsAudioInitialized] = useState(false)
@@ -54,7 +53,6 @@ function WorkingAreaContent({
   // Session selection and content state
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [sessionTranscriptions, setSessionTranscriptions] = useState<TranscriptionResult[]>([])
-  const [sessionLLMResults, setSessionLLMResults] = useState<SessionAnalysis[]>([])
   const [sessionMindMaps, setSessionMindMaps] = useState<MindMapData[]>([])
   const [isLoadingSessionContent, setIsLoadingSessionContent] = useState(false)
   const [hasLoadedSessionContent, setHasLoadedSessionContent] = useState(false)
@@ -137,32 +135,16 @@ function WorkingAreaContent({
     }
   }, [])
 
-  // Register for session analysis results - this persists across panel expansion/collapse
+  // Register for error messages - this persists across panel expansion/collapse
   useEffect(() => {
-    const unregister = WebSocketService.onSessionAnalysis((analysis: SessionAnalysis) => {
-      console.log('WorkingArea received session analysis:', analysis)
-      setSessionAnalysis(analysis)
-      setAnalysisError(null)
-      // Set loading state for automatic mind map generation
-      setIsGeneratingAutomaticMindMap(true)
-      
-      // If a session is selected, refresh the session content to include the new analysis
-      if (selectedSessionId) {
-        setTimeout(() => {
-          loadSessionContent(selectedSessionId, false)
-        }, 1000) // Wait 1 second for database to be updated
-      }
-    })
-
     const unregisterError = WebSocketService.onError((errorMsg: string) => {
-      setAnalysisError(errorMsg)
+      console.error('WebSocket error:', errorMsg)
     })
 
     return () => {
-      unregister()
       unregisterError()
     }
-  }, [selectedSessionId])
+  }, [])
 
   // Register for mind map results - this persists across panel expansion/collapse
   useEffect(() => {
@@ -195,7 +177,6 @@ function WorkingAreaContent({
       // Clear session content when no session is selected
       console.log('No session selected, clearing session content')
       setSessionTranscriptions([])
-      setSessionLLMResults([])
       setSessionMindMaps([])
       setHasLoadedSessionContent(false)
     }
@@ -251,7 +232,6 @@ function WorkingAreaContent({
           const sortedResults = llmResults.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
           console.log('Processed LLM results:', sortedResults)
           console.log('First 3 results after sorting:', sortedResults.slice(0, 3).map((r: any) => ({ id: r.llm_result_id, timestamp: r.timestamp, date: new Date(r.timestamp) })))
-          setSessionLLMResults(sortedResults)
         }
       } else {
         console.error('Failed to load session LLM results:', llmResponse.status)
@@ -342,10 +322,6 @@ function WorkingAreaContent({
     }
   }
 
-  const clearSessionAnalysis = () => {
-    setSessionAnalysis(null)
-    setAnalysisError(null)
-  }
 
   const clearMindMap = () => {
     setMindMapData(null)
@@ -389,40 +365,6 @@ function WorkingAreaContent({
     }
   }
 
-  const generateSummary = async () => {
-    if (!selectedSessionId) return
-    
-    setAnalysisError(null)
-    // Clear any existing session analysis to ensure new summary is displayed
-    setSessionAnalysis(null)
-    
-    try {
-      const response = await fetch(`http://localhost:8000/llm/process-session/${selectedSessionId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-      
-      if (response.ok) {
-        const data = await response.json()
-        if (data.success) {
-          console.log('Summary generated successfully:', data)
-          
-          // Refresh session content to get the new summary
-          await loadSessionContent(selectedSessionId, false)
-        } else {
-          setAnalysisError('Failed to generate summary')
-        }
-      } else {
-        const errorData = await response.json()
-        setAnalysisError(errorData.detail || 'Failed to generate summary')
-      }
-    } catch (error) {
-      console.error('Error generating summary:', error)
-      setAnalysisError('Failed to generate summary')
-    }
-  }
 
   const handleStartListening = async () => {
     if (isListening || !isAudioInitialized) return
@@ -530,15 +472,15 @@ function WorkingAreaContent({
               selectedSessionId={selectedSessionId}
               isLoadingSessionContent={isLoadingSessionContent}
             />
-          ) : expandedPanel.type === 'llm_summary' ? (
-            <LLMSummaryPanel 
-              sessionAnalysis={sessionAnalysis}
-              error={analysisError}
-              onClearAnalysis={clearSessionAnalysis}
-              selectedSessionId={selectedSessionId}
-              sessionLLMResults={sessionLLMResults}
-              isLoadingSessionContent={isLoadingSessionContent}
-              onGenerateSummary={generateSummary}
+          ) : expandedPanel.type === 'custom_llm' ? (
+            <CustomLLMPanel
+              panelId={expandedPanel.id}
+              panelTitle={expandedPanel.title}
+              onRemove={(panelId) => {
+                // Remove from context
+                removeCustomLLMPanel(panelId)
+              }}
+              sessionTranscript={sessionTranscriptions.map(t => t.text).join('\n\n')}
             />
           ) : expandedPanel.type === 'settings' ? (
                           <SettingsPanel 
@@ -621,15 +563,15 @@ function WorkingAreaContent({
                       selectedSessionId={selectedSessionId}
                       isLoadingSessionContent={isLoadingSessionContent}
                     />
-                  ) : panel.type === 'llm_summary' ? (
-                    <LLMSummaryPanel 
-                      sessionAnalysis={sessionAnalysis}
-                      error={analysisError}
-                      onClearAnalysis={clearSessionAnalysis}
-                      selectedSessionId={selectedSessionId}
-                      sessionLLMResults={sessionLLMResults}
-                      isLoadingSessionContent={isLoadingSessionContent}
-                      onGenerateSummary={generateSummary}
+                  ) : panel.type === 'custom_llm' ? (
+                    <CustomLLMPanel
+                      panelId={panel.id}
+                      panelTitle={panel.title}
+                      onRemove={(panelId) => {
+                        // Remove from context
+                        removeCustomLLMPanel(panelId)
+                      }}
+                      sessionTranscript={sessionTranscriptions.map(t => t.text).join('\n\n')}
                     />
                               ) : panel.type === 'settings' ? (
               <SettingsPanel 
@@ -641,7 +583,7 @@ function WorkingAreaContent({
                   }
                 }}
               />
-                            ) : (
+                  ) : (
             <MindMapPanel 
               mindMapData={selectedSessionId && sessionMindMaps.length > 0 ? sessionMindMaps[sessionMindMaps.length - 1] : mindMapData}
               error={mindMapError}

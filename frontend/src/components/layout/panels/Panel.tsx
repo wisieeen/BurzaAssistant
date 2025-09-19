@@ -19,7 +19,7 @@ import {
 interface PanelProps {
   id: string
   title: string
-  type: 'input' | 'output' | 'control' | 'settings' | 'llm_summary' | 'mind_map'
+  type: 'input' | 'output' | 'control' | 'settings' | 'custom_llm' | 'mind_map'
   children: ReactNode
   className?: string
   isExpanded?: boolean
@@ -48,15 +48,15 @@ const typeConfig = {
     color: 'bg-purple-500',
     badge: 'Settings'
   },
-  llm_summary: {
-    icon: Brain,
-    color: 'bg-indigo-500',
-    badge: 'AI Analysis'
-  },
   mind_map: {
     icon: Network,
     color: 'bg-teal-500',
     badge: 'Mind Map'
+  },
+  custom_llm: {
+    icon: Brain,
+    color: 'bg-amber-500',
+    badge: 'Custom LLM'
   }
 }
 
@@ -71,7 +71,6 @@ export const Panel = forwardRef<HTMLDivElement, PanelProps>(({
   onCollapse
 }, ref) => {
   const config = typeConfig[type]
-  const Icon = config.icon
 
   const {
     attributes,

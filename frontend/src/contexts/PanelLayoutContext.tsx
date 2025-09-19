@@ -2,10 +2,11 @@ import { createContext, useContext, useState, ReactNode } from 'react'
 
 export interface PanelData {
   id: string
-  type: 'input' | 'output' | 'control' | 'settings' | 'llm_summary' | 'mind_map'
+  type: 'input' | 'output' | 'control' | 'settings' | 'custom_llm' | 'mind_map'
   title: string
   gridPosition: { row: number; col: number }
   isSelected: boolean
+  isDynamic?: boolean // For dynamically created panels
 }
 
 export type LayoutType = '2x2' | '1x2' | '1x3' | '1x4' | 'custom'
@@ -32,6 +33,9 @@ interface PanelLayoutContextType {
   deselectPanel: (panelId: string) => void
   changeLayout: (layoutType: LayoutType) => void
   updatePanelOrder: (panelIds: string[]) => void
+  addCustomLLMPanel: () => string
+  removeCustomLLMPanel: (panelId: string) => void
+  updatePanelName: (panelId: string, newName: string) => void
 }
 
 const PanelLayoutContext = createContext<PanelLayoutContextType | undefined>(undefined)
@@ -53,9 +57,9 @@ const allAvailablePanels: PanelData[] = [
     isSelected: true
   },
   {
-    id: 'llm-summary-panel',
-    type: 'llm_summary',
-    title: 'Session Analysis',
+    id: 'custom-llm-panel',
+    type: 'custom_llm',
+    title: 'Custom LLM',
     gridPosition: { row: 1, col: 0 },
     isSelected: true
   },
@@ -113,16 +117,17 @@ const layoutConfigs: Record<LayoutType, LayoutConfig> = {
     panelSizes: {
       'mind-map-panel': { rowSpan: 2, colSpan: 2 },
       'transcription-panel': { rowSpan: 1, colSpan: 1 },
-      'llm-summary-panel': { rowSpan: 1, colSpan: 1 }
+      'custom-llm-panel': { rowSpan: 1, colSpan: 1 }
     }
   }
 }
 
 export function PanelLayoutProvider({ children }: { children: ReactNode }) {
-  const [availablePanels] = useState<PanelData[]>(allAvailablePanels)
+  const [availablePanels, setAvailablePanels] = useState<PanelData[]>(allAvailablePanels)
   const [selectedPanelIds, setSelectedPanelIds] = useState<string[]>(['mind-map-panel', 'transcription-panel', 'llm-summary-panel', 'settings-panel'])
   const [currentLayout, setCurrentLayout] = useState<LayoutConfig>(layoutConfigs['2x2'])
   const [expandedPanelId, setExpandedPanelId] = useState<string | null>(null)
+  const [customPanelCounter, setCustomPanelCounter] = useState(0)
 
   // Get currently selected panels in order
   const panels = selectedPanelIds
@@ -200,6 +205,37 @@ export function PanelLayoutProvider({ children }: { children: ReactNode }) {
     setSelectedPanelIds(panelIds)
   }
 
+  const addCustomLLMPanel = () => {
+    const newCounter = customPanelCounter + 1
+    setCustomPanelCounter(newCounter)
+    
+    const newPanelId = `custom-llm-panel-${newCounter}`
+    const newPanel: PanelData = {
+      id: newPanelId,
+      type: 'custom_llm',
+      title: `Custom LLM ${newCounter}`,
+      gridPosition: { row: 0, col: 0 },
+      isSelected: true,
+      isDynamic: true
+    }
+    
+    setAvailablePanels(prev => [...prev, newPanel])
+    setSelectedPanelIds(prev => [...prev, newPanelId])
+    
+    return newPanelId
+  }
+
+  const removeCustomLLMPanel = (panelId: string) => {
+    setAvailablePanels(prev => prev.filter(panel => panel.id !== panelId))
+    setSelectedPanelIds(prev => prev.filter(id => id !== panelId))
+  }
+
+  const updatePanelName = (panelId: string, newName: string) => {
+    setAvailablePanels(prev => prev.map(panel => 
+      panel.id === panelId ? { ...panel, title: newName } : panel
+    ))
+  }
+
   return (
     <PanelLayoutContext.Provider value={{ 
       panels, 
@@ -214,7 +250,10 @@ export function PanelLayoutProvider({ children }: { children: ReactNode }) {
       selectPanel,
       deselectPanel,
       changeLayout,
-      updatePanelOrder
+      updatePanelOrder,
+      addCustomLLMPanel,
+      removeCustomLLMPanel,
+      updatePanelName
     }}>
       {children}
     </PanelLayoutContext.Provider>

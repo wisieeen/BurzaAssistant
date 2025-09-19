@@ -843,3 +843,38 @@ Please return ONLY the corrected JSON:"""
             # Ensure processing is stopped even on error
             await processing_state.stop_processing(session_id, "mind_map")
             return None
+
+    def process_custom_request(self, model: str, prompt: str) -> Optional[str]:
+        """
+        Process a custom LLM request with user-defined prompt and model
+        
+        Args:
+            model: Model name to use for processing
+            prompt: Custom prompt to process
+            
+        Returns:
+            LLM response text or None if failed
+        """
+        try:
+            logger.info(f"Processing custom LLM request with model: {model}")
+            
+            # Use the specified model
+            response = ollama.chat(
+                model=model,
+                messages=[
+                    {
+                        'role': 'user',
+                        'content': prompt
+                    }
+                ]
+            )
+            
+            # Extract the response
+            result = response['message']['content']
+            logger.info(f"Custom LLM request completed successfully")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Failed to process custom LLM request: {e}")
+            return None

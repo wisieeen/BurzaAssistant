@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import Dict, Any
+from pydantic import BaseModel
+import time
 
 from database import get_db
 from services.database_service import DatabaseService
@@ -9,6 +11,20 @@ from services.settings_service import SettingsService
 
 # Create router
 router = APIRouter(prefix="/llm", tags=["llm"])
+
+# Pydantic models for custom LLM processing
+class CustomLLMRequest(BaseModel):
+    model: str
+    prompt: str
+    panel_id: str
+
+class CustomLLMResponse(BaseModel):
+    success: bool
+    result: str
+    processing_time: float
+    model: str
+    panel_id: str
+    error: str = None
 
 @router.get("/model-info")
 async def get_llm_model_info(db: Session = Depends(get_db)):
@@ -324,3 +340,59 @@ async def llm_health_check(db: Session = Depends(get_db)):
             "ollama_connected": False,
             "model_available": False
         }
+
+@router.post("/custom", response_model=CustomLLMResponse)
+async def process_custom_llm_request(
+    request: CustomLLMRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Process a custom LLM request with user-defined prompt and model
+    
+    Args:
+        request: Custom LLM request containing model, prompt, and panel_id
+        
+    Returns:
+        Custom LLM processing results
+    """
+    try:
+        db_service = DatabaseService(db)
+        settings_service = SettingsService(db)
+        llm_service = LLMService(db_service, settings_service)
+        
+        # Validate model is available
+        if request.model == 'none':
+            raise HTTPException(
+                status_code=400, 
+                detail="Model 'none' is not available for processing"
+            )
+        
+        # Process the custom request
+        start_time = time.time()
+        result = llm_service.process_custom_request(
+            model=request.model,
+            prompt=request.prompt
+        )
+        processing_time = time.time() - start_time
+        
+        if result:
+            return CustomLLMResponse(
+                success=True,
+                result=result,
+                processing_time=processing_time,
+                model=request.model,
+                panel_id=request.panel_id
+            )
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to process custom LLM request"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process custom LLM request: {str(e)}"
+        )

@@ -10,6 +10,13 @@ interface PanelSettings {
   ollamaTaskPrompt: string
 }
 
+// Types for custom LLM panel settings
+interface CustomLLMSettings {
+  model: string
+  prompt: string
+  appendToPrevious: boolean
+}
+
 // Available Ollama models (same as SettingsPanel)
 const FALLBACK_OLLAMA_MODELS = [
   { id: 'none', name: 'None (Disabled)', description: 'Skip this type of processing' },
@@ -28,15 +35,21 @@ const DEFAULT_PANEL_SETTINGS: PanelSettings = {
 interface PanelSettingsMenuProps {
   isOpen: boolean
   onClose: () => void
-  onSettingsChange?: (settings: PanelSettings) => void
+  onSettingsChange?: (settings: PanelSettings | CustomLLMSettings) => void
+  customSettings?: CustomLLMSettings
+  isCustomLLMPanel?: boolean
 }
 
 export function PanelSettingsMenu({ 
   isOpen, 
   onClose, 
-  onSettingsChange 
+  onSettingsChange,
+  customSettings,
+  isCustomLLMPanel = false
 }: PanelSettingsMenuProps) {
-  const [settings, setSettings] = useState<PanelSettings>(DEFAULT_PANEL_SETTINGS)
+  const [settings, setSettings] = useState<PanelSettings | CustomLLMSettings>(
+    isCustomLLMPanel && customSettings ? customSettings : DEFAULT_PANEL_SETTINGS
+  )
   const [isLoading, setIsLoading] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [availableOllamaModels, setAvailableOllamaModels] = useState<Array<{id: string, name: string, description: string}>>(FALLBACK_OLLAMA_MODELS)
@@ -45,10 +58,15 @@ export function PanelSettingsMenu({
   // Load settings from backend on component mount
   useEffect(() => {
     if (isOpen) {
-      loadSettingsFromBackend()
-      loadAvailableOllamaModels()
+      if (isCustomLLMPanel) {
+        // For custom LLM panels, just load models, settings are passed as props
+        loadAvailableOllamaModels()
+      } else {
+        loadSettingsFromBackend()
+        loadAvailableOllamaModels()
+      }
     }
-  }, [isOpen])
+  }, [isOpen, isCustomLLMPanel])
 
   const loadSettingsFromBackend = async () => {
     try {
@@ -121,7 +139,7 @@ export function PanelSettingsMenu({
     }
   }
 
-  const handleSettingChange = (key: keyof PanelSettings, value: any) => {
+  const handleSettingChange = (key: string, value: any) => {
     setSettings(prev => ({
       ...prev,
       [key]: value
@@ -134,31 +152,38 @@ export function PanelSettingsMenu({
     setSaveStatus('saving')
 
     try {
-      // Save to backend API
-      const response = await fetch('http://localhost:8000/api/settings/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ollama_summary_model: settings.ollamaSummaryModel,
-          ollama_task_prompt: settings.ollamaTaskPrompt
-        })
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        if (data.success) {
-          // Also save to localStorage as backup
-          localStorage.setItem('panelSettings', JSON.stringify(settings))
-          setSaveStatus('saved')
-          console.log('Panel settings saved to backend successfully')
-          
-          // Notify parent component of settings change
-          onSettingsChange?.(settings)
-        } else {
-          throw new Error(data.message || 'Failed to save panel settings')
-        }
+      if (isCustomLLMPanel) {
+        // For custom LLM panels, just notify parent component
+        onSettingsChange?.(settings as CustomLLMSettings)
+        setSaveStatus('saved')
+        console.log('Custom LLM panel settings updated')
       } else {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        // Save to backend API for regular panels
+        const response = await fetch('http://localhost:8000/api/settings/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ollama_summary_model: (settings as PanelSettings).ollamaSummaryModel,
+            ollama_task_prompt: (settings as PanelSettings).ollamaTaskPrompt
+          })
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success) {
+            // Also save to localStorage as backup
+            localStorage.setItem('panelSettings', JSON.stringify(settings))
+            setSaveStatus('saved')
+            console.log('Panel settings saved to backend successfully')
+            
+            // Notify parent component of settings change
+            onSettingsChange?.(settings as PanelSettings)
+          } else {
+            throw new Error(data.message || 'Failed to save panel settings')
+          }
+        } else {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
       }
 
       setTimeout(() => setSaveStatus('idle'), 2000)
@@ -188,7 +213,9 @@ export function PanelSettingsMenu({
          <div className="fixed inset-0 bg-white bg-opacity-70 flex items-center justify-center z-50">
        <div className="bg-background/95 backdrop-blur-sm border-2 border-border p-6 rounded-lg shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto animate-in fade-in-0 zoom-in-95 duration-200">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-foreground">LLM Summary Panel Settings</h2>
+          <h2 className="text-xl font-semibold text-foreground">
+            {isCustomLLMPanel ? 'Custom LLM Panel Settings' : 'LLM Summary Panel Settings'}
+          </h2>
           <Button variant="ghost" size="sm" onClick={onClose}>
             <X className="w-5 h-5" />
           </Button>
@@ -205,10 +232,12 @@ export function PanelSettingsMenu({
             </Badge>
           </div>
 
-                     {/* Summary Model Selection */}
+                     {/* Model Selection */}
                        <Card className="border-2 border-border/50 bg-card/95 hover:border-primary/50 transition-all duration-200 hover:shadow-lg">
               <CardHeader className="bg-muted/30 rounded-t-lg">
-                <CardTitle className="text-base">Summary Analysis Model</CardTitle>
+                <CardTitle className="text-base">
+                  {isCustomLLMPanel ? 'LLM Model' : 'Summary Analysis Model'}
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 p-4">
                              <div className="flex items-center justify-between mb-2">
@@ -226,8 +255,8 @@ export function PanelSettingsMenu({
               
               <select 
                 className="w-full px-3 py-2 border-2 border-border rounded-md bg-background/90 resize-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                value={settings.ollamaSummaryModel}
-                onChange={(e) => handleSettingChange('ollamaSummaryModel', e.target.value)}
+                value={isCustomLLMPanel ? (settings as CustomLLMSettings).model : (settings as PanelSettings).ollamaSummaryModel}
+                onChange={(e) => handleSettingChange(isCustomLLMPanel ? 'model' : 'ollamaSummaryModel', e.target.value)}
                 disabled={isLoadingModels}
               >
                 {isLoadingModels ? (
@@ -242,7 +271,10 @@ export function PanelSettingsMenu({
               </select>
               
                              <p className="text-xs text-foreground bg-muted/30 p-2 rounded border border-border/50">
-                 Used for transcript analysis and summaries: <span className="font-medium text-primary">{getOllamaModelName(settings.ollamaSummaryModel)}</span>
+                 {isCustomLLMPanel 
+                   ? `Selected model: ${getOllamaModelName((settings as CustomLLMSettings).model)}`
+                   : `Used for transcript analysis and summaries: ${getOllamaModelName((settings as PanelSettings).ollamaSummaryModel)}`
+                 }
                </p>
             </CardContent>
           </Card>
@@ -250,21 +282,61 @@ export function PanelSettingsMenu({
                      {/* Task Prompt */}
                        <Card className="border-2 border-border/50 bg-card/95 hover:border-primary/50 transition-all duration-200 hover:shadow-lg">
               <CardHeader className="bg-muted/30 rounded-t-lg">
-                <CardTitle className="text-base">Analysis Prompt</CardTitle>
+                <CardTitle className="text-base">
+                  {isCustomLLMPanel ? 'Custom Prompt' : 'Analysis Prompt'}
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 p-4">
               <textarea 
                 className="w-full px-3 py-2 border-2 border-border rounded-md bg-background/90 resize-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 rows={8}
-                value={settings.ollamaTaskPrompt}
-                onChange={(e) => handleSettingChange('ollamaTaskPrompt', e.target.value)}
-                placeholder="Enter the prompt template for LLM analysis..."
+                value={isCustomLLMPanel ? (settings as CustomLLMSettings).prompt : (settings as PanelSettings).ollamaTaskPrompt}
+                onChange={(e) => handleSettingChange(isCustomLLMPanel ? 'prompt' : 'ollamaTaskPrompt', e.target.value)}
+                placeholder={isCustomLLMPanel ? "Enter your custom prompt for LLM processing..." : "Enter the prompt template for LLM analysis..."}
               />
                              <p className="text-xs text-foreground bg-muted/30 p-2 rounded border border-border/50">
-                 Use <code className="bg-primary/20 px-1 py-0.5 rounded text-primary font-mono">{'{transcript}'}</code> as a placeholder for the transcript text
+                 {isCustomLLMPanel 
+                   ? "Use {transcript} for transcript text and {previous_result} for previous generation results (replaced with 'none' if no previous result selected). This prompt will be used for all processing requests in this panel."
+                   : `Use ${'{transcript}'} as a placeholder for the transcript text`
+                 }
                </p>
             </CardContent>
           </Card>
+
+          {/* Append to Previous Option - Only for Custom LLM Panels */}
+          {isCustomLLMPanel && (
+            <Card className="border-2 border-border/50 bg-card/95 hover:border-primary/50 transition-all duration-200 hover:shadow-lg">
+              <CardHeader className="bg-muted/30 rounded-t-lg">
+                <CardTitle className="text-base">Result Handling</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 p-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1 flex-1">
+                    <label className="text-sm font-semibold text-foreground">Append to Previous</label>
+                    <p className="text-xs text-muted-foreground">
+                      When enabled, new results will be appended to the previous result instead of replacing it.
+                      Useful for incremental processing where you want to build upon previous results.
+                    </p>
+                  </div>
+                  <div className="ml-4 flex-shrink-0">
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={(settings as CustomLLMSettings).appendToPrevious || false}
+                        onChange={(e) => handleSettingChange('appendToPrevious', e.target.checked)}
+                        className="w-4 h-4 text-primary bg-background border-2 border-muted-foreground rounded focus:ring-primary focus:ring-2"
+                      />
+                      <span className="text-sm text-muted-foreground">Enable</span>
+                    </label>
+                  </div>
+                </div>
+                <p className="text-xs text-foreground bg-muted/30 p-2 rounded border border-border/50">
+                  <strong>Note:</strong> When this option is enabled, make sure your prompt asks the LLM to return only new information, 
+                  as it will be appended to the existing result.
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
                      {/* Action Buttons */}
            <div className="flex space-x-3 pt-4">

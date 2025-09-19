@@ -12,7 +12,8 @@ import {
   Grid,
   Layout,
   CheckSquare,
-  Square as SquareIcon
+  Square as SquareIcon,
+  Plus
 } from 'lucide-react'
 import { usePanelLayout, LayoutType } from '@/contexts/PanelLayoutContext'
 
@@ -42,7 +43,8 @@ export function Sidebar({
     selectPanel, 
     deselectPanel, 
     changeLayout,
-    updatePanelOrder 
+    updatePanelOrder,
+    addCustomLLMPanel
   } = usePanelLayout()
 
   const layoutOptions: { type: LayoutType; label: string; icon: React.ReactNode }[] = [
@@ -201,7 +203,18 @@ export function Sidebar({
 
       {/* Panel Selection */}
       <div className="p-6 border-b">
-        <h3 className="text-sm font-medium text-foreground mb-3">Active Panels</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium text-foreground">Active Panels</h3>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={addCustomLLMPanel}
+            className="h-6 px-2 text-xs"
+          >
+            <Plus className="w-3 h-3 mr-1" />
+            Add LLM
+          </Button>
+        </div>
         <div className="space-y-2">
           {availablePanels.map((panel) => (
             <div key={panel.id} className="flex items-center justify-between">
@@ -217,6 +230,9 @@ export function Sidebar({
                   )}
                 </button>
                 <span className="text-sm text-muted-foreground">{panel.title}</span>
+                {panel.isDynamic && (
+                  <Badge variant="secondary" className="text-xs">Custom</Badge>
+                )}
               </div>
               {selectedPanelIds.includes(panel.id) && (
                 <div className="flex space-x-1">
