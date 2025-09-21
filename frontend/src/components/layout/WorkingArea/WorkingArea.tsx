@@ -463,6 +463,8 @@ function WorkingAreaContent({
               isAudioInitialized={isAudioInitialized}
               onStartListening={handleStartListening}
               onStopListening={handleStopListening}
+              onTranscriptionReceived={handleTranscriptionReceived}
+              sessionId={selectedSessionId || undefined}
             />
           ) : expandedPanel.type === 'output' ? (
             <TranscriptionPanel 
@@ -554,6 +556,8 @@ function WorkingAreaContent({
                       isAudioInitialized={isAudioInitialized}
                       onStartListening={handleStartListening}
                       onStopListening={handleStopListening}
+                      onTranscriptionReceived={handleTranscriptionReceived}
+                      sessionId={selectedSessionId || undefined}
                     />
                   ) : panel.type === 'output' ? (
                     <TranscriptionPanel 
@@ -571,7 +575,14 @@ function WorkingAreaContent({
                         // Remove from context
                         removeCustomLLMPanel(panelId)
                       }}
-                      sessionTranscript={sessionTranscriptions.map(t => t.text).join('\n\n')}
+                      sessionTranscript={
+                        selectedSessionId 
+                          ? sessionTranscriptions.map(t => t.text).reverse().join('\n\n') // Reverse to get chronological order
+                          : [
+                              ...transcriptionHistory.map(t => t.text).reverse(), // Reverse to get chronological order
+                              liveTranscription
+                            ].filter(Boolean).join('\n\n')
+                      }
                     />
                               ) : panel.type === 'settings' ? (
               <SettingsPanel 

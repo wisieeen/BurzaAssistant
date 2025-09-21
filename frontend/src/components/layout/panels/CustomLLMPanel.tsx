@@ -42,8 +42,8 @@ export function CustomLLMPanel({
   const nameInputRef = useRef<HTMLInputElement>(null)
   const [selectedPreviousResult, setSelectedPreviousResult] = useState<string | null>(null)
   const [settings, setSettings] = useState({
-    model: 'artifish/llama3.2-uncensored:latest',
-    prompt: "Please analyze the transcript and list all topics with short descriptions not listed in previous results. If nothing new is mentioned in transcript, return simple 'none'.\nTranscript:\n'''\n{transcript}\n'''\nPrevious result:\n'''\n{previous_result}\n'''",
+    model: 'qwen2.5:7b',
+    prompt: "Please analyze the transcript and identify ALL topics, companies, people, or subjects mentioned that are NOT already covered in the previous results. Focus on finding new content, even if it's about completely different topics. If you find any new topics, list them with short descriptions. Only return 'none' if the transcript contains absolutely no new topics, companies, or subjects.\n\nTranscript:\n'''\n{transcript}\n'''\n\nPrevious results (already analyzed):\n'''\n{previous_result}\n'''\n\nInstructions:\n- Compare the transcript content against the previous results\n- Look for ANY new topics, companies, people, or subjects\n- If you find new content, list it even if it's completely different from previous topics\n- Only return 'none' if there is truly no new content to analyze",
     appendToPrevious: true
   })
 
@@ -112,11 +112,25 @@ export function CustomLLMPanel({
     setEditingName(panelTitle)
   }, [panelTitle])
 
+  // Auto-select the newest result by default
+  useEffect(() => {
+    if (results.length > 0) {
+      // Find the most recent completed result (results are sorted with newest first)
+      const newestResult = results.find(result => result.status === 'completed')
+      if (newestResult && (!selectedPreviousResult || selectedPreviousResult !== newestResult.result)) {
+        setSelectedPreviousResult(newestResult.result)
+      }
+    }
+  }, [results, selectedPreviousResult])
+
   const processWithLLM = async () => {
     if (!sessionTranscript.trim()) {
       setError('No transcript available for processing')
       return
     }
+
+    console.log('CustomLLMPanel processing with transcript:', sessionTranscript)
+    console.log('Transcript length:', sessionTranscript.length)
 
     // No need to check for previous result - we'll handle it in prompt processing
 
@@ -147,6 +161,9 @@ export function CustomLLMPanel({
         const previousResultValue = selectedPreviousResult || 'none'
         processedPrompt = processedPrompt.replace('{previous_result}', previousResultValue)
       }
+
+      console.log('Sending request to LLM with prompt:', processedPrompt)
+      console.log('Selected previous result:', selectedPreviousResult)
 
       const response = await fetch('http://localhost:8000/llm/custom', {
         method: 'POST',
@@ -251,11 +268,23 @@ export function CustomLLMPanel({
     setError(null)
   }
 
+  const resetToDefaultSettings = () => {
+    const defaultSettings = {
+      model: 'qwen2.5:7b',
+      prompt: "Please analyze the transcript and identify ALL topics, companies, people, or subjects mentioned that are NOT already covered in the previous results. Focus on finding new content, even if it's about completely different topics. If you find any new topics, list them with short descriptions. Only return 'none' if the transcript contains absolutely no new topics, companies, or subjects.\n\nTranscript:\n'''\n{transcript}\n'''\n\nPrevious results (already analyzed):\n'''\n{previous_result}\n'''\n\nInstructions:\n- Compare the transcript content against the previous results\n- Look for ANY new topics, companies, people, or subjects\n- If you find new content, list it even if it's completely different from previous topics\n- Only return 'none' if there is truly no new content to analyze",
+      appendToPrevious: true
+    }
+    
+    // Clear localStorage cache
+    localStorage.removeItem(`customLLMPanel_${panelId}`)
+    
+    // Reset to default settings
+    setSettings(defaultSettings)
+    
+    console.log('Reset CustomLLMPanel to default settings')
+  }
+
   const formatResult = (text: string) => {
-    // Debug logging
-    console.log('formatResult input:', text)
-    console.log('formatResult input length:', text.length)
-    console.log('formatResult input chars:', text.split('').map((char: string, i: number) => ({ char, code: char.charCodeAt(0), index: i })))
     
     // Split the result into lines and process each line
     const lines = text.split('\n')
@@ -445,6 +474,15 @@ export function CustomLLMPanel({
               <Square className="w-3 h-3" />
             </Button>
           )}
+          
+          <Button 
+            variant="outline"
+            size="sm"
+            onClick={resetToDefaultSettings}
+            title="Reset to default settings (clears cached prompt)"
+          >
+            Reset
+          </Button>
           
           <Button 
             variant="outline"
